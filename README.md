@@ -1,39 +1,22 @@
 # Taiwan Highway CCTV Viewer with Real-Time Vehicle Detection
 
-A high-performance real-time viewer for 2,500+ Taiwan Highway Bureau CCTV feeds with integrated YOLOv8 vehicle detection, concurrent ingestion, and in-memory caching.
+Real-time viewer for 2,500+ Taiwan Highway Bureau CCTV feeds with YOLOv8 vehicle detection and Stream Out integration.
 
 ## Features
 
-### Backend (FastAPI + YOLOv8)
-- **YOLOv8 Vehicle Detection**: Real-time detection of cars, motorcycles, buses, and trucks
-- **Bounding Box Visualization**: Automatic drawing of detection boxes on images with 0.4 confidence threshold
-- **Concurrent Ingestion**: Fetches all 2,500+ feeds simultaneously using asyncio
-- **Connection Pooling**: Reuses HTTP connections (100 keepalive, 200 max concurrent)
-- **In-Memory Caching**: Stores latest annotated JPEG frame for each feed
-- **Health Checking**: Tracks online/offline status of each feed
-- **Auto-Refresh**: Updates all feeds every 1-2 seconds with YOLO processing
-- **REST API**: Clean JSON API for feed metadata, vehicle detection status, and cached snapshots
+### Backend
+- YOLOv8 vehicle detection (cars, buses, trucks at 60% confidence)
+- Stream Out: CoT (UDP) and Lattice (REST API)
+- Concurrent ingestion with connection pooling
+- In-memory caching
+- REST API
 
-### Frontend (HTML/JS)
-- **Vehicle Detection Badges**: Orange "TAI OCCUPIED" badge on thumbnails with detected vehicles
-- **Bounding Boxes**: YOLO-drawn boxes around detected vehicles visible on all images
-- **Real-time Updates**: Auto-refreshes visible thumbnails every 2 seconds
-- **Fast Modal View**: 0.5-second refresh when viewing individual feed
-- **Advanced Filtering**:
-  - Show All Feeds
-  - Working Only (online feeds)
-  - TAI Occupied (feeds with detected vehicles)
-- **Search**: Filter by location, road, or feed ID
-- **Responsive Grid**: Displays 100+ feeds simultaneously
-- **YOLO Integration API**: Global API for computer vision processing
-
-### Performance Optimizations
-1. **Sequential Batch Processing**: Processes feeds in batches of 200 to avoid overwhelming servers
-2. **Confidence Thresholding**: Only detects and draws boxes for vehicles with ≥40% confidence
-3. **Cache Busting**: Timestamp-based URLs prevent browser caching
-4. **Lazy Loading**: Only loads visible feeds
-5. **Viewport Detection**: Only refreshes thumbnails currently visible in browser
-6. **HTTP Connection Reuse**: Minimal latency for snapshot requests
+### Frontend
+- Stream Out configuration UI
+- Vehicle detection badges and bounding boxes
+- Filter by status or detected vehicles
+- Search by location/road/ID
+- Auto-refresh thumbnails
 
 ## Architecture
 
@@ -143,66 +126,59 @@ Returns system statistics
 }
 ```
 
-## YOLO Vehicle Detection
+### POST /api/stream/config
+Configure Stream Out integration
 
-### Detection Configuration
-- **Model**: YOLOv8n (Nano) - optimized for speed
-- **Vehicle Classes**: Car, Bus, Truck (COCO dataset classes 2, 5, 7) - motorcycles excluded to reduce false positives
-- **Confidence Threshold**: 0.6 (60%) - higher threshold for more accurate detections
-- **Minimum Box Size**: 30 pixels - filters out tiny false positives
-- **Processing**: Server-side, inline during feed ingestion
-- **Visualization**: Automatic bounding box drawing on detected vehicles
-- **Performance**: ~50-100ms per image
-
-### Frontend Integration API
-
-The viewer exposes a global JavaScript API:
-
-```javascript
-// Get all feed metadata
-const allFeeds = window.cctvViewer.getAllFeeds();
-
-// Get only working/online feeds
-const workingFeeds = window.cctvViewer.getWorkingFeeds();
-
-// Get currently displayed feeds (after filtering/search)
-const displayedFeeds = window.cctvViewer.getDisplayedFeeds();
-
-// Get feed status map
-const status = window.cctvViewer.getFeedStatus();
-
-// Get specific feed image element by ID
-const img = window.cctvViewer.getFeedImage('CCTV-14-0620-009-002');
-
-// Get all visible feed image elements
-const allImages = window.cctvViewer.getAllFeedImages();
+**Request:**
+```json
+{
+  "enabled": true,
+  "format": "cot",
+  "ip": "127.0.0.1",
+  "port": 8087,
+  "latticeToken": "",
+  "latticeSandboxToken": "",
+  "latticeIntegration": "taiwan-cctv",
+  "latticeUrl": ""
+}
 ```
 
-All feed images have `crossorigin="anonymous"` for canvas-based ML processing.
+### GET /api/stream/config
+Get current Stream Out configuration
+
+## Stream Out Integration
+
+### CoT (Cursor on Target)
+Send vehicle detection events to TAK/ATAK systems via UDP.
+
+**Config:** Format, IP, Port
+
+**Message:** XML event with camera location, metadata, timestamp, video link
+
+### Lattice (Anduril)
+Publish vehicle track entities to Lattice platform.
+
+**Config:** Format, URL, Environment Token, Sandbox Token (for sandboxes), Integration Name
+
+**Entity:** Camera ID, location, VEHICLE platform type, 1-hour expiry
+
+**Note:** Sandboxes need two tokens (Authorization + anduril-sandbox-authorization headers)
+
+## YOLO Vehicle Detection
+
+- Model: YOLOv8n
+- Classes: Car, Bus, Truck (COCO 2, 5, 7)
+- Confidence: 60%
+- Min box size: 30px
+- Processing: ~50-100ms per image
 
 ## Technical Details
 
-- **Total Feeds**: 2,402 camera feeds
-- **Coverage**: Taiwan highways and expressways
-- **Backend**: Python 3.8+, FastAPI, httpx async client, YOLOv8
-- **Frontend**: Vanilla JavaScript (no frameworks)
-- **Refresh Rate**: 1-2 seconds (all feeds), 0.5 seconds (modal view)
-- **Memory Usage**: ~450 MB for 2,400 cached JPEGs
-- **Concurrent Connections**: Up to 200 simultaneous
-- **Image Format**: JPEG snapshots with YOLO annotations
-- **CORS**: Enabled for all origins
-- **SSL**: Bypassed for Taiwan servers (self-signed certs)
-
-## Performance Metrics
-
-Typical performance on modern hardware:
-
-- **Initial Load**: 2-5 seconds (fetch all feed metadata)
-- **First Cache**: 8-15 seconds (fetch + YOLO process all 2,400 snapshots)
-- **Refresh Cycle**: 3-6 seconds (update all 2,400 feeds with YOLO)
-- **Modal Refresh**: 0.1-0.3 seconds (single feed)
-- **Working Feeds**: ~70-80% (1,700-1,900 cameras online)
-- **Vehicle Detection Rate**: Varies by traffic conditions
+- 2,402 Taiwan highway camera feeds
+- Python 3.8+, FastAPI, YOLOv8
+- Vanilla JavaScript frontend
+- ~450 MB memory for cached JPEGs
+- 1-2 second refresh rate
 
 ## Dependencies
 
@@ -214,6 +190,7 @@ pillow>=10.0.0
 ultralytics>=8.0.0
 torch>=2.0.0
 torchvision>=0.15.0
+anduril-lattice-sdk>=1.0.0
 ```
 
 The YOLOv8n model (~6MB) will be automatically downloaded on first run.

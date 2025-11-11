@@ -433,33 +433,73 @@
 
                 <div class="config-row">
                     <label>Output Format:</label>
-                    <select id="streamFormat" class="config-input">
+                    <select id="streamFormat" class="config-input" onchange="updateFormatFields()">
                         <option value="cot">CoT (Cursor on Target)</option>
+                        <option value="lattice">Lattice (Anduril)</option>
                         <option value="json" disabled>JSON (Coming Soon)</option>
                     </select>
                 </div>
 
-                <div class="config-row">
+                <div class="config-row cot-fields">
                     <label>Destination IP:</label>
                     <input type="text" id="streamIP" class="config-input" placeholder="192.168.1.100" value="127.0.0.1">
                 </div>
 
-                <div class="config-row">
+                <div class="config-row cot-fields">
                     <label>Port:</label>
                     <input type="number" id="streamPort" class="config-input" placeholder="8087" value="8087" min="1" max="65535">
+                </div>
+
+                <div class="config-row lattice-fields" style="display: none;">
+                    <label>Lattice API URL:</label>
+                    <input type="text" id="latticeUrl" class="config-input" placeholder="https://your-sandbox.lattice.anduril.com">
+                </div>
+
+                <div class="config-row lattice-fields" style="display: none;">
+                    <label>Environment Token:</label>
+                    <input type="password" id="latticeToken" class="config-input" placeholder="Environment 'Lattice Auth Token'">
+                    <small style="color: #888; font-size: 12px; display: block; margin-top: 4px;">Get from your environment details in Sandboxes</small>
+                </div>
+
+                <div class="config-row lattice-fields" style="display: none;">
+                    <label>Sandbox Token:</label>
+                    <input type="password" id="latticeSandboxToken" class="config-input" placeholder="Account-level Sandboxes Bearer Token">
+                    <small style="color: #888; font-size: 12px; display: block; margin-top: 4px;">Create in Account & Security → Bearer tokens (only for Sandboxes)</small>
+                </div>
+
+                <div class="config-row lattice-fields" style="display: none;">
+                    <label>Integration Name:</label>
+                    <input type="text" id="latticeIntegration" class="config-input" placeholder="taiwan-cctv" value="taiwan-cctv">
                 </div>
 
                 <div class="config-row">
                     <button class="btn btn-primary" onclick="saveStreamConfig()">Apply Configuration</button>
                 </div>
 
-                <div class="stream-info">
+                <div class="stream-info cot-info">
                     <p><strong>CoT Settings:</strong></p>
                     <ul>
                         <li>Protocol: UDP (fire and forget)</li>
                         <li>Marker Type: a-u-G (Unknown Ground)</li>
                         <li>Updates: Sent when vehicles detected</li>
                         <li>Callsign: TrafficCam-{ID}</li>
+                    </ul>
+                </div>
+
+                <div class="stream-info lattice-info" style="display: none;">
+                    <p><strong>Lattice Settings:</strong></p>
+                    <ul>
+                        <li>Protocol: HTTPS REST API</li>
+                        <li>Entity Type: Unknown Ground</li>
+                        <li>Updates: Real-time on vehicle detection</li>
+                        <li>Expiry: 1 hour (auto-refresh)</li>
+                    </ul>
+                    <p><strong>Sandboxes Authentication:</strong></p>
+                    <ul>
+                        <li><strong>Environment Token:</strong> Get from environment details ("Lattice Auth Token")</li>
+                        <li><strong>Sandbox Token:</strong> Create in Account & Security → Bearer tokens</li>
+                        <li>Both tokens required for Sandbox environments</li>
+                        <li>Production only needs Environment Token</li>
                     </ul>
                 </div>
             </div>
@@ -788,11 +828,35 @@
                 document.getElementById('streamFormat').value = config.format || 'cot';
                 document.getElementById('streamIP').value = config.ip || '127.0.0.1';
                 document.getElementById('streamPort').value = config.port || 8087;
+                document.getElementById('latticeUrl').value = config.latticeUrl || '';
+                document.getElementById('latticeToken').value = config.latticeToken || '';
+                document.getElementById('latticeIntegration').value = config.latticeIntegration || 'taiwan-cctv';
 
-                // Update button state
+                // Update button state and format fields
                 updateStreamButtonState(config.enabled);
+                updateFormatFields();
             } catch (error) {
                 console.error('Error loading stream config:', error);
+            }
+        }
+
+        function updateFormatFields() {
+            const format = document.getElementById('streamFormat').value;
+            const cotFields = document.querySelectorAll('.cot-fields');
+            const latticeFields = document.querySelectorAll('.lattice-fields');
+            const cotInfo = document.querySelector('.cot-info');
+            const latticeInfo = document.querySelector('.lattice-info');
+
+            if (format === 'cot') {
+                cotFields.forEach(el => el.style.display = 'block');
+                latticeFields.forEach(el => el.style.display = 'none');
+                cotInfo.style.display = 'block';
+                latticeInfo.style.display = 'none';
+            } else if (format === 'lattice') {
+                cotFields.forEach(el => el.style.display = 'none');
+                latticeFields.forEach(el => el.style.display = 'block');
+                cotInfo.style.display = 'none';
+                latticeInfo.style.display = 'block';
             }
         }
 
@@ -801,7 +865,11 @@
                 enabled: document.getElementById('streamEnabled').checked,
                 format: document.getElementById('streamFormat').value,
                 ip: document.getElementById('streamIP').value,
-                port: parseInt(document.getElementById('streamPort').value)
+                port: parseInt(document.getElementById('streamPort').value),
+                latticeUrl: document.getElementById('latticeUrl').value,
+                latticeToken: document.getElementById('latticeToken').value,
+                latticeSandboxToken: document.getElementById('latticeSandboxToken').value,
+                latticeIntegration: document.getElementById('latticeIntegration').value
             };
 
             try {

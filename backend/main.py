@@ -46,7 +46,11 @@ stream_config = {
     "enabled": False,
     "format": "cot",
     "ip": "127.0.0.1",
-    "port": 8087
+    "port": 8087,
+    "latticeToken": "",
+    "latticeSandboxToken": "",
+    "latticeIntegration": "taiwan-cctv",
+    "latticeUrl": ""
 }
 
 # Pydantic model for stream configuration
@@ -55,6 +59,13 @@ class StreamConfig(BaseModel):
     format: str
     ip: str
     port: int
+    latticeToken: Optional[str] = ""
+    latticeSandboxToken: Optional[str] = ""
+    latticeIntegration: Optional[str] = "taiwan-cctv"
+    latticeUrl: Optional[str] = ""
+
+# Lattice client (initialized when token is provided)
+lattice_client = None
 
 # SSL context for Taiwan servers
 ssl_context = ssl.create_default_context()
@@ -116,6 +127,143 @@ def send_cot_udp(message: str, ip: str, port: int):
         sock.close()
     except Exception as e:
         print(f"Error sending CoT message: {e}")
+
+
+def publish_lattice_entity(feed: Dict, integration_name: str):
+    """Publish entity to Lattice with vehicle detection"""
+    global lattice_client
+
+    if lattice_client is None:
+        print("⚠ Lattice client is None, skipping publish")
+        return
+
+    try:
+        from anduril import Location, Position, Aliases, Provenance, Ontology, MilView
+        from datetime import timedelta
+
+        # Parse lat/lon
+        lat = float(feed.get('lat', '0.0'))
+        lon = float(feed.get('lon', '0.0'))
+
+        # Create entity name/description
+        name_parts = []
+        if feed.get('roadName'):
+            name_parts.append(feed['roadName'])
+        if feed.get('locationMile'):
+            name_parts.append(feed['locationMile'])
+        entity_name = " - ".join(name_parts) if name_parts else feed['id']
+
+        description = f"Traffic Camera: {entity_name} | Vehicle Detected"
+
+        now = datetime.now(timezone.utc)
+        expiry = now + timedelta(hours=1)
+
+        entity_id = feed['id']
+        entity_name_alias = f"TrafficCam-{entity_id}"
+
+        print(f"Publishing entity {entity_id} to Lattice...")
+        print(f"  Location: ({lat}, {lon})")
+        print(f"  Description: {description}")
+        print(f"  Alias: {entity_name_alias}")
+
+        # Publish entity using keyword arguments
+        response = lattice_client.entities.publish_entity(
+            entity_id=entity_id,
+            description=description,
+            is_live=True,
+            created_time=now,
+            expiry_time=expiry,
+            location=Location(
+                position=Position(
+                    latitude_degrees=lat,
+                    longitude_degrees=lon,
+                    altitude_hae_meters=0.0
+                )
+            ),
+            aliases=Aliases(
+                name=entity_name_alias
+            ),
+            ontology=Ontology(
+                template="TEMPLATE_TRACK",
+                platform_type="VEHICLE"
+            ),
+            mil_view=MilView(
+                disposition="DISPOSITION_UNKNOWN",
+                environment="ENVIRONMENT_SURFACE"
+            ),
+            provenance=Provenance(
+                integration_name=integration_name,
+                data_type="CCTV",
+                source_update_time=now
+            )
+        )
+
+        print(f"✓ Successfully published entity {entity_id}")
+    except Exception as e:
+        print(f"✗ Error publishing to Lattice: {e}")
+        import traceback
+        print(f"  Traceback: {traceback.format_exc()}")
+
+
+def initialize_lattice_client(env_token: str, sandbox_token: str = None, base_url: str = None):
+    """
+    Initialize Lattice client with tokens
+
+    For Sandboxes:
+    - env_token: Environment-level "Lattice Auth Token" (goes in Authorization: Bearer header)
+    - sandbox_token: Account-level Sandboxes token (goes in anduril-sandbox-authorization header)
+
+    For Production:
+    - env_token: Your production Lattice token
+    - sandbox_token: Not needed
+    """
+    global lattice_client
+    try:
+        from anduril import Lattice
+
+        # Debug: Check if tokens are provided
+        env_token_preview = f"{env_token[:10]}..." if len(env_token) > 10 else "EMPTY/SHORT"
+        print(f"Initializing Lattice with environment token: {env_token_preview}")
+
+        # For sandbox environments, we need BOTH tokens
+        # Use the SDK's headers parameter to pass the sandbox token
+        custom_headers = {}
+        if base_url and "sandbox" in base_url.lower():
+            if sandbox_token:
+                sandbox_token_preview = f"{sandbox_token[:10]}..." if len(sandbox_token) > 10 else "EMPTY/SHORT"
+                print(f"Detected sandbox environment - using sandbox token: {sandbox_token_preview}")
+                # IMPORTANT: Sandbox token also needs "Bearer " prefix!
+                custom_headers["anduril-sandbox-authorization"] = f"Bearer {sandbox_token}"
+            else:
+                print("⚠ Warning: Sandbox URL detected but no sandbox token provided!")
+
+        # Initialize with SDK's native headers parameter (better than custom httpx client)
+        if custom_headers:
+            if base_url:
+                print(f"Using base_url: {base_url}")
+                lattice_client = Lattice(
+                    token=env_token,
+                    base_url=base_url,
+                    headers=custom_headers
+                )
+            else:
+                lattice_client = Lattice(
+                    token=env_token,
+                    headers=custom_headers
+                )
+        else:
+            # Standard initialization for production environments
+            if base_url:
+                print(f"Using base_url: {base_url}")
+                lattice_client = Lattice(token=env_token, base_url=base_url)
+            else:
+                print("Using default Lattice URL")
+                lattice_client = Lattice(token=env_token)
+
+        print(f"✓ Lattice client initialized successfully")
+    except Exception as e:
+        print(f"✗ Error initializing Lattice client: {e}")
+        lattice_client = None
 
 
 async def fetch_feed_list():
@@ -309,15 +457,18 @@ async def update_feed_cache_worker():
                             feed_status[feed_id] = True
                             feed_vehicle_detected[feed_id] = has_vehicles
 
-                            # Send CoT message if streaming enabled and vehicle detected
-                            if has_vehicles and stream_config["enabled"] and stream_config["format"] == "cot":
+                            # Send streaming updates if enabled and vehicle detected
+                            if has_vehicles and stream_config["enabled"]:
                                 feed_info = next((f for f in feeds_data if f['id'] == feed_id), None)
                                 if feed_info:
                                     try:
-                                        cot_msg = generate_cot_message(feed_info)
-                                        send_cot_udp(cot_msg, stream_config["ip"], stream_config["port"])
+                                        if stream_config["format"] == "cot":
+                                            cot_msg = generate_cot_message(feed_info)
+                                            send_cot_udp(cot_msg, stream_config["ip"], stream_config["port"])
+                                        elif stream_config["format"] == "lattice":
+                                            publish_lattice_entity(feed_info, stream_config["latticeIntegration"])
                                     except Exception as e:
-                                        print(f"Error sending CoT for {feed_id}: {e}")
+                                        print(f"Error streaming {stream_config['format']} for {feed_id}: {e}")
                         else:
                             feed_status[feed_id] = False
                             feed_vehicle_detected[feed_id] = False
@@ -483,9 +634,24 @@ async def set_stream_config(config: StreamConfig):
     stream_config["format"] = config.format
     stream_config["ip"] = config.ip
     stream_config["port"] = config.port
+    stream_config["latticeToken"] = config.latticeToken or ""
+    stream_config["latticeSandboxToken"] = config.latticeSandboxToken or ""
+    stream_config["latticeIntegration"] = config.latticeIntegration or "taiwan-cctv"
+    stream_config["latticeUrl"] = config.latticeUrl or ""
+
+    # Initialize Lattice client if token provided and format is lattice
+    if config.format == "lattice" and config.latticeToken:
+        initialize_lattice_client(
+            env_token=config.latticeToken,
+            sandbox_token=config.latticeSandboxToken or None,
+            base_url=config.latticeUrl or None
+        )
 
     status = "enabled" if config.enabled else "disabled"
-    print(f"Stream Out {status}: {config.format} -> {config.ip}:{config.port}")
+    if config.format == "cot":
+        print(f"Stream Out {status}: CoT -> {config.ip}:{config.port}")
+    elif config.format == "lattice":
+        print(f"Stream Out {status}: Lattice -> {config.latticeIntegration} @ {config.latticeUrl or 'default'}")
 
     return {"status": "success", "config": stream_config}
 
