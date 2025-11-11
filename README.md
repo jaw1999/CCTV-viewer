@@ -147,8 +147,9 @@ Returns system statistics
 
 ### Detection Configuration
 - **Model**: YOLOv8n (Nano) - optimized for speed
-- **Vehicle Classes**: Car, Motorcycle, Bus, Truck (COCO dataset classes 2, 3, 5, 7)
-- **Confidence Threshold**: 0.4 (40%)
+- **Vehicle Classes**: Car, Bus, Truck (COCO dataset classes 2, 5, 7) - motorcycles excluded to reduce false positives
+- **Confidence Threshold**: 0.6 (60%) - higher threshold for more accurate detections
+- **Minimum Box Size**: 30 pixels - filters out tiny false positives
 - **Processing**: Server-side, inline during feed ingestion
 - **Visualization**: Automatic bounding box drawing on detected vehicles
 - **Performance**: ~50-100ms per image
@@ -237,7 +238,8 @@ python3 backend/main.py
 ### YOLO not detecting vehicles
 - Check backend logs for "YOLO model loaded successfully"
 - Ensure PyTorch and dependencies installed correctly
-- Detection requires confidence ≥0.4 (40%)
+- Detection requires confidence ≥0.6 (60%) and minimum box size of 30 pixels
+- Only detects cars, buses, and trucks (motorcycles excluded)
 - Some cameras may not have vehicles in frame
 
 ### Slow refresh rate

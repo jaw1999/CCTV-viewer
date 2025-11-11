@@ -30,8 +30,12 @@ last_update: float = 0
 
 # YOLO model (loaded at startup)
 yolo_model = None
-# Vehicle class IDs in COCO dataset: car=2, motorcycle=3, bus=5, truck=7
-VEHICLE_CLASSES = [2, 3, 5, 7]
+# Vehicle class IDs in COCO dataset: car=2, bus=5, truck=7 (excluding motorcycle to reduce false positives)
+VEHICLE_CLASSES = [2, 5, 7]
+# Minimum detection box size (width or height) to filter out tiny false positives
+MIN_BOX_SIZE = 30  # pixels
+# Confidence threshold for detections
+CONFIDENCE_THRESHOLD = 0.6
 
 # SSL context for Taiwan servers
 ssl_context = ssl.create_default_context()
@@ -94,25 +98,45 @@ def detect_vehicles(img_bytes: bytes) -> tuple[bool, bytes]:
         # Convert bytes to PIL Image
         img = Image.open(BytesIO(img_bytes))
         img_array = np.array(img)
+        img_height, img_width = img_array.shape[:2]
 
         # Run YOLO inference with confidence threshold
-        results = yolo_model(img_array, verbose=False, conf=0.4)[0]
+        results = yolo_model(img_array, verbose=False, conf=CONFIDENCE_THRESHOLD)[0]
 
         has_vehicles = False
+        valid_boxes = []
 
-        # Check if any vehicle classes detected with confidence >= 0.4
+        # Check if any vehicle classes detected with proper filtering
         if results.boxes is not None and len(results.boxes) > 0:
-            # Filter to only vehicle detections with conf >= 0.4
+            # Filter to only vehicle detections with proper size and confidence
             for box in results.boxes:
                 class_id = int(box.cls[0])
                 confidence = float(box.conf[0])
-                if class_id in VEHICLE_CLASSES and confidence >= 0.4:
-                    has_vehicles = True
-                    break
+
+                # Only process vehicle classes
+                if class_id not in VEHICLE_CLASSES:
+                    continue
+
+                # Check confidence threshold
+                if confidence < CONFIDENCE_THRESHOLD:
+                    continue
+
+                # Get box dimensions (x1, y1, x2, y2)
+                x1, y1, x2, y2 = box.xyxy[0].cpu().numpy()
+                box_width = x2 - x1
+                box_height = y2 - y1
+
+                # Filter out tiny detections (likely false positives)
+                if box_width < MIN_BOX_SIZE or box_height < MIN_BOX_SIZE:
+                    continue
+
+                # This is a valid vehicle detection
+                has_vehicles = True
+                valid_boxes.append(box)
 
             if has_vehicles:
                 # Get image with drawn boxes using YOLO's built-in plotting
-                # This will only show boxes that passed the conf threshold
+                # This will only show boxes that passed all our filters
                 annotated = results.plot()  # Returns numpy array with boxes drawn
 
                 # Convert annotated numpy array back to JPEG bytes
