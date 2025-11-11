@@ -289,6 +289,92 @@
             0%, 100% { opacity: 1; }
             50% { opacity: 0.5; }
         }
+
+        /* Stream Out Modal Styles */
+        .stream-modal {
+            max-width: 500px;
+            width: 90%;
+        }
+
+        .stream-config {
+            padding: 20px;
+        }
+
+        .config-row {
+            margin-bottom: 20px;
+        }
+
+        .config-row label {
+            display: block;
+            color: #ccc;
+            margin-bottom: 8px;
+            font-size: 14px;
+        }
+
+        .config-input {
+            width: 100%;
+            padding: 10px;
+            background: #1a1a1a;
+            border: 2px solid #444;
+            border-radius: 5px;
+            color: white;
+            font-size: 14px;
+        }
+
+        .config-input:focus {
+            outline: none;
+            border-color: #0066cc;
+        }
+
+        .toggle-label {
+            display: flex;
+            align-items: center;
+            cursor: pointer;
+        }
+
+        .toggle-label input[type="checkbox"] {
+            width: 20px;
+            height: 20px;
+            margin-right: 10px;
+            cursor: pointer;
+        }
+
+        .toggle-label span {
+            font-size: 16px;
+            font-weight: bold;
+        }
+
+        .btn-primary {
+            width: 100%;
+            background: #0066cc;
+            border-color: #0066cc;
+        }
+
+        .btn-primary:hover {
+            background: #0052a3;
+        }
+
+        .stream-info {
+            margin-top: 20px;
+            padding: 15px;
+            background: #1a1a1a;
+            border-radius: 5px;
+            font-size: 13px;
+        }
+
+        .stream-info p {
+            margin-bottom: 10px;
+            color: #0066cc;
+        }
+
+        .stream-info ul {
+            margin-left: 20px;
+            color: #888;
+        }
+
+        .stream-info li {
+            margin-bottom: 5px;
+        }
     </style>
 </head>
 <body>
@@ -309,6 +395,7 @@
                 <button class="btn active" id="showAllBtn" onclick="setFilter('all')">Show All</button>
                 <button class="btn" id="showWorkingBtn" onclick="setFilter('working')">Working Only</button>
                 <button class="btn" id="showOccupiedBtn" onclick="setFilter('occupied')">TAI Occupied</button>
+                <button class="btn" id="streamOutBtn" onclick="openStreamOutModal()">Stream Out</button>
             </div>
         </div>
     </div>
@@ -327,6 +414,55 @@
             </div>
             <div class="modal-video" id="modalVideo"></div>
             <div class="modal-details" id="modalDetails"></div>
+        </div>
+    </div>
+
+    <div class="modal" id="streamOutModal">
+        <div class="modal-content stream-modal">
+            <div class="modal-header">
+                <h2>Stream Out Configuration</h2>
+                <button class="modal-close" onclick="closeStreamOutModal()">&times;</button>
+            </div>
+            <div class="stream-config">
+                <div class="config-row">
+                    <label class="toggle-label">
+                        <input type="checkbox" id="streamEnabled" onchange="toggleStreaming()">
+                        <span>Enable Streaming</span>
+                    </label>
+                </div>
+
+                <div class="config-row">
+                    <label>Output Format:</label>
+                    <select id="streamFormat" class="config-input">
+                        <option value="cot">CoT (Cursor on Target)</option>
+                        <option value="json" disabled>JSON (Coming Soon)</option>
+                    </select>
+                </div>
+
+                <div class="config-row">
+                    <label>Destination IP:</label>
+                    <input type="text" id="streamIP" class="config-input" placeholder="192.168.1.100" value="127.0.0.1">
+                </div>
+
+                <div class="config-row">
+                    <label>Port:</label>
+                    <input type="number" id="streamPort" class="config-input" placeholder="8087" value="8087" min="1" max="65535">
+                </div>
+
+                <div class="config-row">
+                    <button class="btn btn-primary" onclick="saveStreamConfig()">Apply Configuration</button>
+                </div>
+
+                <div class="stream-info">
+                    <p><strong>CoT Settings:</strong></p>
+                    <ul>
+                        <li>Protocol: UDP (fire and forget)</li>
+                        <li>Marker Type: a-u-G (Unknown Ground)</li>
+                        <li>Updates: Sent when vehicles detected</li>
+                        <li>Callsign: TrafficCam-{ID}</li>
+                    </ul>
+                </div>
+            </div>
         </div>
     </div>
 
@@ -630,6 +766,85 @@
         // Close modal on background click
         document.getElementById('feedModal').addEventListener('click', (e) => {
             if (e.target.id === 'feedModal') closeModal();
+        });
+
+        // Stream Out Modal Functions
+        function openStreamOutModal() {
+            document.getElementById('streamOutModal').classList.add('active');
+            // Load current config from backend
+            loadStreamConfig();
+        }
+
+        function closeStreamOutModal() {
+            document.getElementById('streamOutModal').classList.remove('active');
+        }
+
+        async function loadStreamConfig() {
+            try {
+                const response = await fetch(`${API_URL}/api/stream/config`);
+                const config = await response.json();
+
+                document.getElementById('streamEnabled').checked = config.enabled;
+                document.getElementById('streamFormat').value = config.format || 'cot';
+                document.getElementById('streamIP').value = config.ip || '127.0.0.1';
+                document.getElementById('streamPort').value = config.port || 8087;
+
+                // Update button state
+                updateStreamButtonState(config.enabled);
+            } catch (error) {
+                console.error('Error loading stream config:', error);
+            }
+        }
+
+        async function saveStreamConfig() {
+            const config = {
+                enabled: document.getElementById('streamEnabled').checked,
+                format: document.getElementById('streamFormat').value,
+                ip: document.getElementById('streamIP').value,
+                port: parseInt(document.getElementById('streamPort').value)
+            };
+
+            try {
+                const response = await fetch(`${API_URL}/api/stream/config`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(config)
+                });
+
+                if (response.ok) {
+                    alert('Stream configuration saved successfully!');
+                    updateStreamButtonState(config.enabled);
+                    closeStreamOutModal();
+                } else {
+                    alert('Failed to save stream configuration');
+                }
+            } catch (error) {
+                console.error('Error saving stream config:', error);
+                alert('Error saving stream configuration');
+            }
+        }
+
+        async function toggleStreaming() {
+            const enabled = document.getElementById('streamEnabled').checked;
+            updateStreamButtonState(enabled);
+        }
+
+        function updateStreamButtonState(enabled) {
+            const btn = document.getElementById('streamOutBtn');
+            if (enabled) {
+                btn.classList.add('active');
+                btn.textContent = 'Stream Out (ON)';
+            } else {
+                btn.classList.remove('active');
+                btn.textContent = 'Stream Out';
+            }
+        }
+
+        // Close stream modal on background click
+        document.getElementById('streamOutModal').addEventListener('click', (e) => {
+            if (e.target.id === 'streamOutModal') closeStreamOutModal();
         });
 
         // Expose API for YOLO integration

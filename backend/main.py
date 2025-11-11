@@ -7,6 +7,9 @@ Ingests and caches all 2,500+ feeds in real-time
 import asyncio
 import ssl
 import time
+import socket
+import uuid
+from datetime import datetime, timezone
 from typing import Dict, List, Optional
 from io import BytesIO
 import xml.etree.ElementTree as ET
@@ -20,6 +23,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from PIL import Image
 from ultralytics import YOLO
+from pydantic import BaseModel
 
 # Global state
 feeds_data: List[Dict] = []
@@ -37,10 +41,81 @@ MIN_BOX_SIZE = 30  # pixels
 # Confidence threshold for detections
 CONFIDENCE_THRESHOLD = 0.6
 
+# Stream Out configuration
+stream_config = {
+    "enabled": False,
+    "format": "cot",
+    "ip": "127.0.0.1",
+    "port": 8087
+}
+
+# Pydantic model for stream configuration
+class StreamConfig(BaseModel):
+    enabled: bool
+    format: str
+    ip: str
+    port: int
+
 # SSL context for Taiwan servers
 ssl_context = ssl.create_default_context()
 ssl_context.check_hostname = False
 ssl_context.verify_mode = ssl.CERT_NONE
+
+
+def generate_cot_message(feed: Dict) -> str:
+    """Generate a CoT XML message for a camera with vehicle detection"""
+    # Generate ISO 8601 timestamp with milliseconds
+    now = datetime.now(timezone.utc)
+    time_str = now.strftime('%Y-%m-%dT%H:%M:%S.%f')[:-3] + 'Z'
+
+    # Stale time (1 hour from now)
+    stale_time = datetime.fromtimestamp(now.timestamp() + 3600, timezone.utc)
+    stale_str = stale_time.strftime('%Y-%m-%dT%H:%M:%S.%f')[:-3] + 'Z'
+
+    # Use feed ID as UID
+    uid = feed['id']
+
+    # Callsign: TrafficCam-{ID}
+    callsign = f"TrafficCam-{feed['id']}"
+
+    # Build remarks with location info
+    remarks_parts = []
+    if feed.get('roadName'):
+        remarks_parts.append(f"Road: {feed['roadName']}")
+    if feed.get('locationMile'):
+        remarks_parts.append(f"Location: {feed['locationMile']}")
+    if feed.get('description'):
+        remarks_parts.append(feed['description'])
+    remarks_parts.append("Vehicle Detected")
+    remarks = " | ".join(remarks_parts)
+
+    # Get lat/lon
+    lat = feed.get('lat', '0.0')
+    lon = feed.get('lon', '0.0')
+
+    # Build CoT XML
+    cot_xml = f'''<?xml version='1.0' encoding='UTF-8' standalone='yes'?>
+<event version='2.0' uid='{uid}' type='a-u-G' time='{time_str}' start='{time_str}' stale='{stale_str}' how='h-e'>
+    <point lat='{lat}' lon='{lon}' hae='9999999.0' ce='9999999.0' le='9999999.0' />
+    <detail>
+        <contact callsign='{callsign}'/>
+        <remarks>{remarks}</remarks>
+        <link uid='{uid}' type='video' url='http://localhost:8001/api/feeds/{uid}/snapshot'/>
+        <usericon iconsetpath='COT_MAPPING_2525B/a-u/a-u-G'/>
+    </detail>
+</event>'''
+
+    return cot_xml
+
+
+def send_cot_udp(message: str, ip: str, port: int):
+    """Send CoT message via UDP"""
+    try:
+        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        sock.sendto(message.encode('utf-8'), (ip, port))
+        sock.close()
+    except Exception as e:
+        print(f"Error sending CoT message: {e}")
 
 
 async def fetch_feed_list():
@@ -233,6 +308,16 @@ async def update_feed_cache_worker():
                             feed_cache[feed_id] = annotated_img
                             feed_status[feed_id] = True
                             feed_vehicle_detected[feed_id] = has_vehicles
+
+                            # Send CoT message if streaming enabled and vehicle detected
+                            if has_vehicles and stream_config["enabled"] and stream_config["format"] == "cot":
+                                feed_info = next((f for f in feeds_data if f['id'] == feed_id), None)
+                                if feed_info:
+                                    try:
+                                        cot_msg = generate_cot_message(feed_info)
+                                        send_cot_udp(cot_msg, stream_config["ip"], stream_config["port"])
+                                    except Exception as e:
+                                        print(f"Error sending CoT for {feed_id}: {e}")
                         else:
                             feed_status[feed_id] = False
                             feed_vehicle_detected[feed_id] = False
@@ -382,6 +467,27 @@ async def get_stats():
         "lastUpdate": last_update,
         "cacheSize": sum(len(img) for img in feed_cache.values()) / (1024 * 1024)  # MB
     }
+
+
+@app.get("/api/stream/config")
+async def get_stream_config():
+    """Get stream out configuration"""
+    return stream_config
+
+
+@app.post("/api/stream/config")
+async def set_stream_config(config: StreamConfig):
+    """Set stream out configuration"""
+    global stream_config
+    stream_config["enabled"] = config.enabled
+    stream_config["format"] = config.format
+    stream_config["ip"] = config.ip
+    stream_config["port"] = config.port
+
+    status = "enabled" if config.enabled else "disabled"
+    print(f"Stream Out {status}: {config.format} -> {config.ip}:{config.port}")
+
+    return {"status": "success", "config": stream_config}
 
 
 if __name__ == "__main__":
