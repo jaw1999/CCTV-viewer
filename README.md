@@ -61,7 +61,6 @@ A high-performance real-time viewer for 2,500+ Taiwan Highway Bureau CCTV feeds 
 
 ### Automatic (Recommended)
 ```bash
-cd /Users/jordan/development/videoviewer
 ./start.sh
 ```
 
@@ -78,7 +77,6 @@ The startup script will:
 
 **Terminal 1 - Backend:**
 ```bash
-cd /Users/jordan/development/videoviewer
 python3 -m venv venv
 source venv/bin/activate
 pip install -r requirements.txt
@@ -87,7 +85,7 @@ python backend/main.py
 
 **Terminal 2 - Frontend:**
 ```bash
-cd /Users/jordan/development/videoviewer/client
+cd client
 python3 -m http.server 8000
 ```
 
@@ -205,13 +203,6 @@ Typical performance on modern hardware:
 - **Working Feeds**: ~70-80% (1,700-1,900 cameras online)
 - **Vehicle Detection Rate**: Varies by traffic conditions
 
-## Browser Support
-
-- Chrome/Edge: ✅ Recommended
-- Firefox: ✅ Supported
-- Safari: ✅ Supported
-- Mobile browsers: ✅ Responsive design
-
 ## Dependencies
 
 ```
@@ -271,9 +262,5 @@ videoviewer/
 ├── venv/                    # Python virtual environment
 ├── requirements.txt         # Python dependencies
 ├── start.sh                 # Startup script
-└── README.md               # This file
+└── README.md                # This file
 ```
-
-## License
-
-MIT
