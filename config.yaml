@@ -1,0 +1,110 @@
+# Taiwan CCTV Viewer Configuration
+
+# Detection settings
+detection:
+  confidence_threshold: 0.6  # 60% confidence for vehicle detection
+  min_box_size: 20  # Minimum bounding box size in pixels
+  vehicle_classes:  # COCO dataset class IDs
+    - 2  # car
+    - 5  # bus
+    - 7  # truck
+
+  # Additional detection classes (enable as needed)
+  detect_pedestrians: false
+  detect_motorcycles: false
+  detect_bicycles: false
+
+  # Object tracking settings
+  tracking:
+    enabled: true
+    max_age: 30  # Maximum frames to keep track alive
+    min_hits: 3  # Minimum detections before track is confirmed
+    iou_threshold: 0.3  # IOU threshold for matching
+
+# Performance settings
+performance:
+  batch_size: 240  # Number of feeds per batch
+  worker_threads: 8  # ThreadPoolExecutor workers
+  selective_skip_interval: 2  # Re-check empty feeds every N cycles
+
+  # Connection pool settings
+  http:
+    max_connections: 300
+    max_keepalive: 250
+    keepalive_expiry: 60  # seconds
+    timeout: 5.0
+    connect_timeout: 2.0
+
+# Video recording
+recording:
+  enabled: false
+  on_vehicle_detection: true
+  duration: 30  # seconds
+  format: "mp4"
+  codec: "h264"
+  output_dir: "./recordings"
+  retention_days: 7  # Auto-delete after N days
+
+# Database settings
+database:
+  enabled: true
+  type: "sqlite"  # sqlite, postgresql, mysql
+  path: "./data/cctv_data.db"  # For SQLite
+  # For PostgreSQL/MySQL:
+  # host: "localhost"
+  # port: 5432
+  # username: "user"
+  # password: "pass"
+  # database: "cctv"
+
+  # Data retention
+  retention:
+    detections: 30  # days
+    feed_history: 90  # days
+
+# WebSocket settings
+websocket:
+  enabled: true
+  heartbeat_interval: 30  # seconds
+  max_connections: 100
+
+# API settings
+api:
+  enable_cors: true
+  enable_gzip: true
+  rate_limit: 1000  # requests per minute
+
+# Alerting (future feature)
+alerts:
+  enabled: false
+  email:
+    enabled: false
+    smtp_host: "smtp.gmail.com"
+    smtp_port: 587
+    from_address: "alerts@example.com"
+    to_addresses:
+      - "admin@example.com"
+  webhook:
+    enabled: false
+    url: ""
+
+# Logging
+logging:
+  level: "INFO"  # DEBUG, INFO, WARNING, ERROR
+  format: "json"  # json, text
+  file: "./logs/cctv.log"
+  max_size_mb: 100
+  backup_count: 5
+
+# Stream Out (existing feature)
+stream_out:
+  enabled: false
+  format: "cot"  # cot, lattice
+  cot:
+    ip: "127.0.0.1"
+    port: 8087
+  lattice:
+    url: ""
+    token: ""
+    sandbox_token: ""
+    integration_name: "taiwan-cctv"

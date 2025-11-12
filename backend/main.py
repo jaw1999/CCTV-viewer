@@ -9,48 +9,95 @@ import ssl
 import time
 import socket
 import uuid
+import hashlib
 from datetime import datetime, timezone
 from typing import Dict, List, Optional
 from io import BytesIO
+from pathlib import Path
 import xml.etree.ElementTree as ET
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import asynccontextmanager
 import numpy as np
 
 import httpx
-from fastapi import FastAPI, HTTPException, Response
+import yaml
+from fastapi import FastAPI, HTTPException, Response, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import StreamingResponse
 from PIL import Image
 from ultralytics import YOLO
 from pydantic import BaseModel
+import cv2
+
+# Import our new modules
+try:
+    from .database import DatabaseManager
+    from .tracker import TrackerManager, Detection as TrackerDetection
+    from .websocket_manager import ConnectionManager, handle_websocket_messages
+except ImportError:
+    # Fallback for direct execution
+    from database import DatabaseManager
+    from tracker import TrackerManager, Detection as TrackerDetection
+    from websocket_manager import ConnectionManager, handle_websocket_messages
+
+# Load configuration
+def load_config() -> dict:
+    """Load configuration from config.yaml"""
+    config_path = Path(__file__).parent.parent / 'config.yaml'
+    if not config_path.exists():
+        print(f"Warning: config.yaml not found at {config_path}, using defaults")
+        return {}
+
+    with open(config_path, 'r') as f:
+        config = yaml.safe_load(f)
+
+    print(f"✓ Configuration loaded from {config_path}")
+    return config
+
+# Load config at module level
+CONFIG = load_config()
 
 # Global state
 feeds_data: List[Dict] = []
 feed_cache: Dict[str, bytes] = {}  # feed_id -> latest JPEG bytes
 feed_status: Dict[str, bool] = {}  # feed_id -> is_working
 feed_vehicle_detected: Dict[str, bool] = {}  # feed_id -> has_vehicles
+feed_image_hash: Dict[str, str] = {}  # feed_id -> image hash for change detection
+feed_retry_after: Dict[str, float] = {}  # feed_id -> next_try_time for exponential backoff
 last_update: float = 0
+cycle_counter: int = 0  # For selective detection cycles
 
 # YOLO model (loaded at startup)
 yolo_model = None
-# Vehicle class IDs in COCO dataset: car=2, bus=5, truck=7 (excluding motorcycle to reduce false positives)
-VEHICLE_CLASSES = [2, 5, 7]
-# Minimum detection box size (width or height) to filter out tiny false positives
-MIN_BOX_SIZE = 30  # pixels
-# Confidence threshold for detections
-CONFIDENCE_THRESHOLD = 0.6
+# ThreadPoolExecutor for offloading CPU-intensive YOLO inference
+executor = None
 
-# Stream Out configuration
+# Database manager
+db_manager: Optional[DatabaseManager] = None
+
+# Tracker manager
+tracker_manager: Optional[TrackerManager] = None
+
+# WebSocket manager
+ws_manager = ConnectionManager()
+
+# Detection settings from config
+VEHICLE_CLASSES = CONFIG.get('detection', {}).get('vehicle_classes', [2, 5, 7])
+MIN_BOX_SIZE = CONFIG.get('detection', {}).get('min_box_size', 20)
+CONFIDENCE_THRESHOLD = CONFIG.get('detection', {}).get('confidence_threshold', 0.6)
+SELECTIVE_SKIP_INTERVAL = CONFIG.get('performance', {}).get('selective_skip_interval', 2)
+
+# Stream Out configuration from config
 stream_config = {
-    "enabled": False,
-    "format": "cot",
-    "ip": "127.0.0.1",
-    "port": 8087,
-    "latticeToken": "",
-    "latticeSandboxToken": "",
-    "latticeIntegration": "taiwan-cctv",
-    "latticeUrl": ""
+    "enabled": CONFIG.get('stream_out', {}).get('enabled', False),
+    "format": CONFIG.get('stream_out', {}).get('format', 'cot'),
+    "ip": CONFIG.get('stream_out', {}).get('cot', {}).get('ip', '127.0.0.1'),
+    "port": CONFIG.get('stream_out', {}).get('cot', {}).get('port', 8087),
+    "latticeToken": CONFIG.get('stream_out', {}).get('lattice', {}).get('token', ''),
+    "latticeSandboxToken": CONFIG.get('stream_out', {}).get('lattice', {}).get('sandbox_token', ''),
+    "latticeIntegration": CONFIG.get('stream_out', {}).get('lattice', {}).get('integration_name', 'taiwan-cctv'),
+    "latticeUrl": CONFIG.get('stream_out', {}).get('lattice', {}).get('url', '')
 }
 
 # Pydantic model for stream configuration
@@ -310,27 +357,35 @@ async def fetch_feed_list():
             return []
 
 
-def detect_vehicles(img_bytes: bytes) -> tuple[bool, bytes]:
-    """Detect if vehicles are present in image using YOLO
-    Returns: (has_vehicles, annotated_image_bytes)
+def detect_vehicles(img_bytes: bytes, feed_id: str = None) -> tuple[bool, bytes, dict]:
+    """Detect if vehicles are present in image using YOLO with tracking (optimized with OpenCV)
+    Returns: (has_vehicles, annotated_image_bytes, detection_data)
     """
     try:
         if yolo_model is None:
-            return False, img_bytes
+            return False, img_bytes, {}
 
-        # Convert bytes to PIL Image
-        img = Image.open(BytesIO(img_bytes))
-        img_array = np.array(img)
-        img_height, img_width = img_array.shape[:2]
+        # OPTIMIZATION: Use OpenCV for faster decoding (2-3x faster than PIL)
+        nparr = np.frombuffer(img_bytes, np.uint8)
+        img_array = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+
+        if img_array is None:
+            return False, img_bytes, {}
 
         # Run YOLO inference with confidence threshold
         results = yolo_model(img_array, verbose=False, conf=CONFIDENCE_THRESHOLD)[0]
 
         has_vehicles = False
         valid_boxes = []
+        total_detections = 0
+        filtered_detections = {"too_small": 0, "wrong_class": 0, "low_conf": 0}
+        vehicle_types = []
+        confidences = []
 
         # Check if any vehicle classes detected with proper filtering
         if results.boxes is not None and len(results.boxes) > 0:
+            total_detections = len(results.boxes)
+
             # Filter to only vehicle detections with proper size and confidence
             for box in results.boxes:
                 class_id = int(box.cls[0])
@@ -338,10 +393,12 @@ def detect_vehicles(img_bytes: bytes) -> tuple[bool, bytes]:
 
                 # Only process vehicle classes
                 if class_id not in VEHICLE_CLASSES:
+                    filtered_detections["wrong_class"] += 1
                     continue
 
                 # Check confidence threshold
                 if confidence < CONFIDENCE_THRESHOLD:
+                    filtered_detections["low_conf"] += 1
                     continue
 
                 # Get box dimensions (x1, y1, x2, y2)
@@ -351,27 +408,76 @@ def detect_vehicles(img_bytes: bytes) -> tuple[bool, bytes]:
 
                 # Filter out tiny detections (likely false positives)
                 if box_width < MIN_BOX_SIZE or box_height < MIN_BOX_SIZE:
+                    filtered_detections["too_small"] += 1
                     continue
 
                 # This is a valid vehicle detection
                 has_vehicles = True
                 valid_boxes.append(box)
 
+                # Track vehicle type
+                vehicle_type_map = {2: 'car', 5: 'bus', 7: 'truck', 3: 'motorcycle', 1: 'bicycle', 0: 'person'}
+                vehicle_types.append(vehicle_type_map.get(class_id, f'class_{class_id}'))
+                confidences.append(confidence)
+
+            # DEBUG: Log detections
+            if total_detections > 0 and feed_id:
+                import random
+                if random.random() < 0.01:  # Log 1% of detections to avoid spam
+                    print(f"  [YOLO] {feed_id}: {total_detections} total, {len(valid_boxes)} vehicles, filtered: {filtered_detections}")
+
+            # Update tracker if enabled
+            tracked_vehicles = []
+            track_counts = {}
+            if has_vehicles and tracker_manager and feed_id:
+                confirmed_tracks, track_counts = tracker_manager.update_tracker(feed_id, results)
+                tracked_vehicles = [
+                    {
+                        "track_id": track.track_id,
+                        "class": track.class_name,
+                        "confidence": round(track.confidence, 2),
+                        "bbox": track.bbox.tolist()
+                    }
+                    for track in confirmed_tracks
+                ]
+
+            # Prepare detection data
+            detection_data = {
+                "vehicle_count": len(valid_boxes),
+                "vehicle_types": list(set(vehicle_types)),  # Unique types
+                "confidence_avg": round(sum(confidences) / len(confidences), 2) if confidences else 0,
+                "tracked_vehicles": tracked_vehicles,
+                "track_counts": track_counts
+            }
+
             if has_vehicles:
                 # Get image with drawn boxes using YOLO's built-in plotting
-                # This will only show boxes that passed all our filters
-                annotated = results.plot()  # Returns numpy array with boxes drawn
+                annotated = results.plot()
 
-                # Convert annotated numpy array back to JPEG bytes
-                annotated_img = Image.fromarray(annotated)
-                output = BytesIO()
-                annotated_img.save(output, format='JPEG', quality=85)
-                return True, output.getvalue()
+                # Draw track IDs if tracking enabled
+                if tracked_vehicles:
+                    for track in tracked_vehicles:
+                        x1, y1, x2, y2 = track["bbox"]
+                        cv2.putText(
+                            annotated,
+                            f"ID:{track['track_id']}",
+                            (int(x1), int(y1) - 10),
+                            cv2.FONT_HERSHEY_SIMPLEX,
+                            0.5,
+                            (0, 255, 0),
+                            2
+                        )
 
-        return False, img_bytes
+                # OPTIMIZATION: Use OpenCV for faster encoding
+                _, encoded = cv2.imencode('.jpg', annotated, [cv2.IMWRITE_JPEG_QUALITY, 75])
+                return True, encoded.tobytes(), detection_data
+
+        return False, img_bytes, {}
     except Exception as e:
         print(f"Error in vehicle detection: {e}")
-        return False, img_bytes
+        import traceback
+        traceback.print_exc()
+        return False, img_bytes, {}
 
 
 async def fetch_snapshot(feed: Dict) -> Optional[bytes]:
@@ -396,12 +502,27 @@ async def fetch_snapshot(feed: Dict) -> Optional[bytes]:
 
 
 async def update_feed_cache_worker():
-    """Background worker - processes feeds in parallel batches"""
-    print("Starting feed cache worker...")
+    """Background worker - processes feeds in parallel batches (OPTIMIZED)"""
+    global cycle_counter
+    print("Starting optimized feed cache worker...")
 
-    # Create persistent HTTP client with reasonable limits
-    limits = httpx.Limits(max_keepalive_connections=100, max_connections=200, keepalive_expiry=30)
-    timeout = httpx.Timeout(5.0, connect=2.0)  # Feeds respond in ~2s when not overwhelmed
+    # Get performance settings from config
+    config_batch_size = CONFIG.get('performance', {}).get('batch_size', 240)
+    http_config = CONFIG.get('performance', {}).get('http', {})
+
+    # OPTIMIZATION: Dynamic batch size based on feed count, capped by config
+    BATCH_SIZE = min(config_batch_size, max(100, len(feeds_data) // 10))
+
+    # OPTIMIZATION: Connection pool from config
+    limits = httpx.Limits(
+        max_keepalive_connections=http_config.get('max_keepalive', 250),
+        max_connections=http_config.get('max_connections', 300),
+        keepalive_expiry=http_config.get('keepalive_expiry', 60)
+    )
+    timeout = httpx.Timeout(
+        http_config.get('timeout', 5.0),
+        connect=http_config.get('connect_timeout', 2.0)
+    )
 
     async with httpx.AsyncClient(verify=False, timeout=timeout, limits=limits) as client:
         while True:
@@ -409,34 +530,43 @@ async def update_feed_cache_worker():
                 await asyncio.sleep(5)
                 continue
 
+            cycle_counter += 1
             start_time = time.time()
-            print(f"Starting concurrent update of {len(feeds_data)} feeds...")
+            print(f"Starting cycle #{cycle_counter} - {len(feeds_data)} feeds (batch size: {BATCH_SIZE})...")
 
-            # Fetch snapshot using shared client
+            # Fetch snapshot using shared client with exponential backoff
             async def fetch_with_client(feed):
+                feed_id = feed['id']
                 url = feed['imageUrl']
+
+                # OPTIMIZATION: Skip feeds in backoff period
+                if feed_id in feed_retry_after:
+                    if time.time() < feed_retry_after[feed_id]:
+                        return feed_id, None, False, "In backoff"
+
                 try:
                     response = await client.get(url, headers={'User-Agent': 'Mozilla/5.0'})
                     response.raise_for_status()
                     img_data = response.content
                     if len(img_data) > 1000:
-                        return feed['id'], img_data, True, None
-                    return feed['id'], None, False, "Image too small"
+                        # Clear backoff on success
+                        if feed_id in feed_retry_after:
+                            del feed_retry_after[feed_id]
+                        return feed_id, img_data, True, None
+                    return feed_id, None, False, "Image too small"
                 except httpx.TimeoutException as e:
-                    return feed['id'], None, False, f"Timeout: {str(e)}"
+                    return feed_id, None, False, f"Timeout: {str(e)}"
                 except httpx.ConnectError as e:
-                    return feed['id'], None, False, f"Connection error: {str(e)}"
+                    return feed_id, None, False, f"Connection error: {str(e)}"
                 except Exception as e:
-                    return feed['id'], None, False, f"Error: {type(e).__name__}"
+                    return feed_id, None, False, f"Error: {type(e).__name__}"
 
-            # Process feeds in sequential batches to avoid overwhelming servers
-            BATCH_SIZE = 200  # Smaller batches, processed one at a time
+            # Process feeds in sequential batches
             batches = [feeds_data[i:i+BATCH_SIZE] for i in range(0, len(feeds_data), BATCH_SIZE)]
-
-            print(f"  Processing {len(batches)} batches sequentially...")
 
             all_results = []
             error_counts = {}
+            detection_stats = {"skipped_unchanged": 0, "skipped_selective": 0, "processed": 0}
 
             for batch_num, batch in enumerate(batches, 1):
                 batch_start = time.time()
@@ -444,13 +574,62 @@ async def update_feed_cache_worker():
                 results = await asyncio.gather(*tasks, return_exceptions=True)
                 all_results.extend(results)
 
+                # Get event loop for executor
+                loop = asyncio.get_event_loop()
+
                 # Update cache immediately after each batch completes
                 for result in results:
                     if isinstance(result, tuple):
                         feed_id, img_data, success, error = result
                         if success and img_data:
-                            # Run YOLO vehicle detection and get annotated image
-                            has_vehicles, annotated_img = detect_vehicles(img_data)
+                            # OPTIMIZATION: Check if image changed using hash
+                            img_hash = hashlib.md5(img_data).hexdigest()
+                            previous_hash = feed_image_hash.get(feed_id)
+
+                            should_detect = True
+
+                            if previous_hash == img_hash:
+                                # Image unchanged, reuse previous detection
+                                has_vehicles = feed_vehicle_detected.get(feed_id, False)
+                                annotated_img = feed_cache.get(feed_id, img_data)
+                                should_detect = False
+                                detection_stats["skipped_unchanged"] += 1
+                            elif cycle_counter > 1 and not feed_vehicle_detected.get(feed_id, False) and cycle_counter % SELECTIVE_SKIP_INTERVAL != 0:
+                                # OPTIMIZATION: Selective detection - only re-check "empty" feeds every 2 cycles
+                                # BUT: Always process on first cycle to establish baseline
+                                has_vehicles = False
+                                annotated_img = img_data
+                                should_detect = False
+                                detection_stats["skipped_selective"] += 1
+
+                            if should_detect:
+                                # OPTIMIZATION: Run YOLO in thread pool to avoid blocking event loop
+                                has_vehicles, annotated_img, detection_data = await loop.run_in_executor(
+                                    executor, detect_vehicles, img_data, feed_id
+                                )
+                                detection_stats["processed"] += 1
+
+                                # Save detection to database if enabled and vehicles detected
+                                if has_vehicles and db_manager and detection_data:
+                                    try:
+                                        await db_manager.add_detection(
+                                            feed_id=feed_id,
+                                            vehicle_count=detection_data.get("vehicle_count", 0),
+                                            vehicle_types=detection_data.get("vehicle_types", []),
+                                            confidence_avg=detection_data.get("confidence_avg", 0)
+                                        )
+                                    except Exception as e:
+                                        print(f"Error saving detection to database: {e}")
+
+                                # Send WebSocket update if vehicles detected
+                                if has_vehicles and ws_manager and detection_data:
+                                    try:
+                                        await ws_manager.send_detection_update(feed_id, detection_data)
+                                    except Exception as e:
+                                        print(f"Error sending WebSocket update: {e}")
+
+                            # Update hash
+                            feed_image_hash[feed_id] = img_hash
 
                             # Store the annotated image (with boxes) in cache
                             feed_cache[feed_id] = annotated_img
@@ -472,6 +651,14 @@ async def update_feed_cache_worker():
                         else:
                             feed_status[feed_id] = False
                             feed_vehicle_detected[feed_id] = False
+
+                            # OPTIMIZATION: Exponential backoff for failed feeds
+                            if error and "In backoff" not in error:
+                                current_backoff = feed_retry_after.get(feed_id + "_interval", 15)
+                                next_backoff = min(current_backoff * 2, 300)  # Max 5 minutes
+                                feed_retry_after[feed_id] = time.time() + current_backoff
+                                feed_retry_after[feed_id + "_interval"] = next_backoff
+
                             if error:
                                 error_type = error.split(':')[0]
                                 error_counts[error_type] = error_counts.get(error_type, 0) + 1
@@ -480,10 +667,11 @@ async def update_feed_cache_worker():
                 success = sum(1 for r in results if isinstance(r, tuple) and r[2])
                 print(f"    Batch {batch_num}/{len(batches)} done in {elapsed:.2f}s ({success}/{len(batch)} succeeded)")
 
-
             elapsed = time.time() - start_time
             working_count = sum(1 for status in feed_status.values() if status)
-            print(f"Cache update complete in {elapsed:.2f}s. {working_count}/{len(feeds_data)} feeds working ({working_count/len(feeds_data)*100:.1f}%)")
+            vehicles_detected = sum(1 for v in feed_vehicle_detected.values() if v)
+            print(f"Cycle #{cycle_counter} complete in {elapsed:.2f}s. {working_count}/{len(feeds_data)} working ({working_count/len(feeds_data)*100:.1f}%), {vehicles_detected} with vehicles")
+            print(f"  Detection stats: {detection_stats['processed']} processed, {detection_stats['skipped_unchanged']} unchanged, {detection_stats['skipped_selective']} selective skip")
 
             # Show error breakdown
             if error_counts:
@@ -495,9 +683,28 @@ async def update_feed_cache_worker():
 
 
 async def initialize_feeds():
-    """Initialize feeds in background"""
+    """Initialize feeds in background with prioritization"""
+    global feeds_data
+
     # Fetch initial feed list
     await fetch_feed_list()
+
+    # OPTIMIZATION: Prioritize major highways (國道) for faster initial cache warm-up
+    if feeds_data:
+        priority_feeds = [f for f in feeds_data if '國道' in f.get('roadName', '')]
+        other_feeds = [f for f in feeds_data if '國道' not in f.get('roadName', '')]
+        feeds_data = priority_feeds + other_feeds
+        print(f"Feed prioritization: {len(priority_feeds)} priority feeds, {len(other_feeds)} others")
+
+    # Sync feeds to database if enabled
+    if db_manager and feeds_data:
+        print(f"Syncing {len(feeds_data)} feeds to database...")
+        for feed in feeds_data[:100]:  # Sync first 100 to avoid blocking
+            try:
+                await db_manager.upsert_feed(feed)
+            except Exception as e:
+                print(f"Error syncing feed {feed.get('id')}: {e}")
+        print("Feed sync complete")
 
     # Start background cache worker
     asyncio.create_task(update_feed_cache_worker())
@@ -508,16 +715,25 @@ async def initialize_feeds():
             await asyncio.sleep(3600)  # 1 hour
             await fetch_feed_list()
 
+            # Sync new feeds to database
+            if db_manager and feeds_data:
+                for feed in feeds_data[:50]:  # Sync subset on refresh
+                    try:
+                        await db_manager.upsert_feed(feed)
+                    except Exception:
+                        pass
+
     asyncio.create_task(refresh_feed_list())
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan events"""
-    global yolo_model
+    global yolo_model, executor, db_manager, tracker_manager
+    import os
 
     # Startup
-    print("Starting Taiwan CCTV API...")
+    print("Starting Taiwan CCTV API (OPTIMIZED)...")
     print("Loading YOLOv8n model...")
 
     # Load YOLO model (downloads automatically if not present)
@@ -528,16 +744,95 @@ async def lifespan(app: FastAPI):
         print(f"Warning: Could not load YOLO model: {e}")
         print("Vehicle detection will be disabled")
 
+    # OPTIMIZATION: Initialize ThreadPoolExecutor for YOLO inference
+    # Use config value or CPU count
+    max_workers = CONFIG.get('performance', {}).get('worker_threads', min(os.cpu_count() or 4, 8))
+    executor = ThreadPoolExecutor(max_workers=max_workers)
+    print(f"ThreadPoolExecutor initialized with {max_workers} workers")
+
+    # Initialize database if enabled
+    db_config = CONFIG.get('database', {})
+    if db_config.get('enabled', True):
+        db_type = db_config.get('type', 'sqlite')
+        if db_type == 'sqlite':
+            db_path = db_config.get('path', './data/cctv_data.db')
+            # Ensure data directory exists
+            Path(db_path).parent.mkdir(parents=True, exist_ok=True)
+            database_url = f"sqlite+aiosqlite:///{db_path}"
+        else:
+            # PostgreSQL/MySQL configuration
+            host = db_config.get('host', 'localhost')
+            port = db_config.get('port', 5432)
+            username = db_config.get('username', 'user')
+            password = db_config.get('password', 'pass')
+            database = db_config.get('database', 'cctv')
+            database_url = f"postgresql+asyncpg://{username}:{password}@{host}:{port}/{database}"
+
+        try:
+            db_manager = DatabaseManager(database_url)
+            await db_manager.init_db()
+            print(f"✓ Database initialized: {db_type}")
+
+            # Schedule periodic cleanup
+            async def cleanup_task():
+                while True:
+                    await asyncio.sleep(86400)  # Once per day
+                    retention = db_config.get('retention', {})
+                    await db_manager.cleanup_old_data(
+                        detection_retention_days=retention.get('detections', 30),
+                        history_retention_days=retention.get('feed_history', 90)
+                    )
+
+            asyncio.create_task(cleanup_task())
+        except Exception as e:
+            print(f"Warning: Could not initialize database: {e}")
+            db_manager = None
+    else:
+        print("Database disabled in config")
+
+    # Initialize tracker if enabled
+    tracking_config = CONFIG.get('detection', {}).get('tracking', {})
+    if tracking_config.get('enabled', True):
+        tracker_manager = TrackerManager(
+            max_age=tracking_config.get('max_age', 30),
+            min_hits=tracking_config.get('min_hits', 3),
+            iou_threshold=tracking_config.get('iou_threshold', 0.3)
+        )
+        print(f"✓ Vehicle tracking initialized")
+    else:
+        print("Vehicle tracking disabled in config")
+
     # Start background tasks
     asyncio.create_task(initialize_feeds())
+
+    # WebSocket heartbeat task
+    websocket_config = CONFIG.get('websocket', {})
+    if websocket_config.get('enabled', True):
+        async def heartbeat_task():
+            interval = websocket_config.get('heartbeat_interval', 30)
+            while True:
+                await asyncio.sleep(interval)
+                await ws_manager.send_heartbeat()
+
+        asyncio.create_task(heartbeat_task())
+        print(f"✓ WebSocket heartbeat started ({websocket_config.get('heartbeat_interval', 30)}s)")
 
     yield
 
     # Shutdown (cleanup if needed)
     print("Shutting down Taiwan CCTV API...")
+    if executor:
+        executor.shutdown(wait=True)
+        print("ThreadPoolExecutor shut down")
+    if db_manager:
+        await db_manager.close()
+        print("Database connection closed")
 
 
-app = FastAPI(title="Taiwan CCTV API", lifespan=lifespan)
+app = FastAPI(title="Taiwan CCTV API (Optimized)", lifespan=lifespan)
+
+# OPTIMIZATION: Add GZip compression middleware (30-50% smaller payloads)
+app.add_middleware(GZipMiddleware, minimum_size=1000)
 
 # Add CORS middleware
 app.add_middleware(
@@ -610,13 +905,150 @@ async def get_stream(feed_id: str):
 async def get_stats():
     """Get system statistics"""
     working = sum(1 for status in feed_status.values() if status)
-    return {
+    vehicles_detected = sum(1 for v in feed_vehicle_detected.values() if v)
+
+    stats = {
         "totalFeeds": len(feeds_data),
         "cachedFeeds": len(feed_cache),
         "workingFeeds": working,
         "offlineFeeds": len(feed_status) - working,
+        "vehiclesDetectedFeeds": vehicles_detected,
         "lastUpdate": last_update,
         "cacheSize": sum(len(img) for img in feed_cache.values()) / (1024 * 1024)  # MB
+    }
+
+    # Add WebSocket stats if available
+    if ws_manager:
+        stats["websocket"] = ws_manager.get_stats()
+
+    return stats
+
+
+@app.get("/api/feeds/{feed_id}/history")
+async def get_feed_history(feed_id: str, hours: int = 24):
+    """Get detection history for a specific feed"""
+    if not db_manager:
+        raise HTTPException(status_code=503, detail="Database not enabled")
+
+    try:
+        detections = await db_manager.get_feed_history(feed_id, hours)
+        return {
+            "feed_id": feed_id,
+            "hours": hours,
+            "detections": [
+                {
+                    "id": d.id,
+                    "timestamp": d.timestamp.isoformat(),
+                    "vehicle_count": d.vehicle_count,
+                    "vehicle_types": d.vehicle_types,
+                    "confidence_avg": d.confidence_avg
+                }
+                for d in detections
+            ]
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error fetching history: {str(e)}")
+
+
+@app.get("/api/feeds/{feed_id}/stats")
+async def get_feed_stats(feed_id: str, days: int = 7):
+    """Get statistics for a specific feed"""
+    if not db_manager:
+        raise HTTPException(status_code=503, detail="Database not enabled")
+
+    try:
+        stats = await db_manager.get_feed_stats(feed_id, days)
+        return {
+            "feed_id": feed_id,
+            **stats
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error fetching stats: {str(e)}")
+
+
+@app.get("/api/search")
+async def search_feeds(
+    road: Optional[str] = None,
+    has_vehicles: Optional[bool] = None,
+    lat_min: Optional[float] = None,
+    lat_max: Optional[float] = None,
+    lon_min: Optional[float] = None,
+    lon_max: Optional[float] = None
+):
+    """Search feeds with filters"""
+    results = feeds_data.copy()
+
+    # Filter by road name
+    if road:
+        results = [f for f in results if road.lower() in f.get('roadName', '').lower()]
+
+    # Filter by vehicle detection
+    if has_vehicles is not None:
+        results = [
+            f for f in results
+            if feed_vehicle_detected.get(f['id'], False) == has_vehicles
+        ]
+
+    # Filter by bounding box
+    if lat_min is not None and lat_max is not None and lon_min is not None and lon_max is not None:
+        results = [
+            f for f in results
+            if (lat_min <= float(f.get('lat', 0) or 0) <= lat_max and
+                lon_min <= float(f.get('lon', 0) or 0) <= lon_max)
+        ]
+
+    # Add status and vehicle detection to results
+    enriched_results = []
+    for feed in results:
+        feed_copy = feed.copy()
+        feed_copy['status'] = feed_status.get(feed['id'], False)
+        feed_copy['vehicleDetected'] = feed_vehicle_detected.get(feed['id'], False)
+        enriched_results.append(feed_copy)
+
+    return {
+        "query": {
+            "road": road,
+            "has_vehicles": has_vehicles,
+            "bbox": [lat_min, lon_min, lat_max, lon_max] if all([lat_min, lat_max, lon_min, lon_max]) else None
+        },
+        "count": len(enriched_results),
+        "feeds": enriched_results
+    }
+
+
+@app.get("/api/map")
+async def get_map_data():
+    """Get feed data formatted for map display"""
+    map_features = []
+
+    for feed in feeds_data:
+        lat = float(feed.get('lat', 0) or 0)
+        lon = float(feed.get('lon', 0) or 0)
+
+        if lat == 0 or lon == 0:
+            continue
+
+        feature = {
+            "type": "Feature",
+            "geometry": {
+                "type": "Point",
+                "coordinates": [lon, lat]
+            },
+            "properties": {
+                "id": feed['id'],
+                "roadName": feed.get('roadName', ''),
+                "locationMile": feed.get('locationMile', ''),
+                "description": feed.get('description', ''),
+                "direction": feed.get('direction', ''),
+                "isWorking": feed_status.get(feed['id'], False),
+                "hasVehicles": feed_vehicle_detected.get(feed['id'], False)
+            }
+        }
+        map_features.append(feature)
+
+    return {
+        "type": "FeatureCollection",
+        "features": map_features
     }
 
 
@@ -654,6 +1086,21 @@ async def set_stream_config(config: StreamConfig):
         print(f"Stream Out {status}: Lattice -> {config.latticeIntegration} @ {config.latticeUrl or 'default'}")
 
     return {"status": "success", "config": stream_config}
+
+
+@app.websocket("/ws")
+async def websocket_endpoint(websocket: WebSocket):
+    """WebSocket endpoint for real-time updates"""
+    client_id = websocket.query_params.get("client_id", "anonymous")
+    await ws_manager.connect(websocket, client_id)
+
+    try:
+        # Handle incoming messages
+        await handle_websocket_messages(websocket, ws_manager)
+    except Exception as e:
+        print(f"WebSocket error: {e}")
+    finally:
+        ws_manager.disconnect(websocket)
 
 
 if __name__ == "__main__":

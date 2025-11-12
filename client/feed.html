@@ -1,0 +1,429 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CCTV Feed Viewer</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            background: #1a1a1a;
+            color: #ffffff;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+
+        .header {
+            background: #2d2d2d;
+            padding: 20px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .header h1 {
+            font-size: 24px;
+            margin: 0;
+        }
+
+        .back-button {
+            padding: 10px 20px;
+            background: #0066cc;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            text-decoration: none;
+            font-size: 14px;
+        }
+
+        .back-button:hover {
+            background: #0052a3;
+        }
+
+        .feed-info {
+            background: #2d2d2d;
+            padding: 20px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+        }
+
+        .info-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin-top: 15px;
+        }
+
+        .info-item {
+            background: #1a1a1a;
+            padding: 12px;
+            border-radius: 6px;
+        }
+
+        .info-label {
+            font-size: 12px;
+            color: #888;
+            margin-bottom: 5px;
+        }
+
+        .info-value {
+            font-size: 14px;
+            color: #fff;
+        }
+
+        .status-badge {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: 500;
+        }
+
+        .status-online {
+            background: #d1fae5;
+            color: #065f46;
+        }
+
+        .status-vehicles {
+            background: #fee2e2;
+            color: #991b1b;
+        }
+
+        .status-offline {
+            background: #e5e7eb;
+            color: #374151;
+        }
+
+        .feed-viewer {
+            background: #2d2d2d;
+            padding: 20px;
+            border-radius: 8px;
+            text-align: center;
+        }
+
+        .feed-image {
+            width: 100%;
+            max-width: 1200px;
+            height: auto;
+            border-radius: 8px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+            display: none;
+        }
+
+        .feed-stream {
+            width: 100%;
+            max-width: 1200px;
+            height: auto;
+            border-radius: 8px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+        }
+
+        .loading {
+            color: #888;
+            padding: 40px;
+            font-size: 18px;
+        }
+
+        .error {
+            color: #ef4444;
+            padding: 40px;
+            font-size: 18px;
+        }
+
+        .controls {
+            margin-top: 20px;
+            display: flex;
+            gap: 10px;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .control-button {
+            padding: 10px 20px;
+            background: #444;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+        }
+
+        .control-button:hover {
+            background: #555;
+        }
+
+        .control-button.active {
+            background: #0066cc;
+        }
+
+        .refresh-rate {
+            color: #888;
+            font-size: 14px;
+        }
+
+        .detection-info {
+            background: #2d2d2d;
+            padding: 20px;
+            border-radius: 8px;
+            margin-top: 20px;
+        }
+
+        .detection-info h2 {
+            font-size: 18px;
+            margin-bottom: 15px;
+        }
+
+        .track-list {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+            gap: 10px;
+        }
+
+        .track-item {
+            background: #1a1a1a;
+            padding: 10px;
+            border-radius: 6px;
+            font-size: 12px;
+        }
+
+        .track-id {
+            font-weight: bold;
+            color: #0066cc;
+            margin-bottom: 5px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1 id="feedTitle">CCTV Feed Viewer</h1>
+            <div>
+                <a href="map.html" class="back-button">Back to Map</a>
+                <a href="index.html" class="back-button">Back to Grid</a>
+            </div>
+        </div>
+
+        <div class="feed-info">
+            <h2>Feed Information</h2>
+            <div class="info-grid">
+                <div class="info-item">
+                    <div class="info-label">Feed ID</div>
+                    <div class="info-value" id="feedId">-</div>
+                </div>
+                <div class="info-item">
+                    <div class="info-label">Road Name</div>
+                    <div class="info-value" id="roadName">-</div>
+                </div>
+                <div class="info-item">
+                    <div class="info-label">Location</div>
+                    <div class="info-value" id="location">-</div>
+                </div>
+                <div class="info-item">
+                    <div class="info-label">Direction</div>
+                    <div class="info-value" id="direction">-</div>
+                </div>
+                <div class="info-item">
+                    <div class="info-label">Status</div>
+                    <div class="info-value">
+                        <span class="status-badge" id="statusBadge">Checking...</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="feed-viewer">
+            <img id="feedImage" class="feed-image" alt="CCTV Feed">
+            <div class="loading" id="loading">Loading feed...</div>
+            <div class="error" id="error" style="display: none;">Failed to load feed</div>
+
+            <div class="controls">
+                <button class="control-button active" id="autoRefreshBtn" onclick="toggleAutoRefresh()">Auto Refresh: ON</button>
+                <button class="control-button" onclick="manualRefresh()">Refresh Now</button>
+                <span class="refresh-rate">Updating every <span id="refreshInterval">2</span>s</span>
+            </div>
+        </div>
+
+        <div class="detection-info" id="detectionInfo" style="display: none;">
+            <h2>Vehicle Detection</h2>
+            <div class="info-grid">
+                <div class="info-item">
+                    <div class="info-label">Vehicle Count</div>
+                    <div class="info-value" id="vehicleCount">0</div>
+                </div>
+                <div class="info-item">
+                    <div class="info-label">Vehicle Types</div>
+                    <div class="info-value" id="vehicleTypes">-</div>
+                </div>
+                <div class="info-item">
+                    <div class="info-label">Average Confidence</div>
+                    <div class="info-value" id="confidence">-</div>
+                </div>
+                <div class="info-item">
+                    <div class="info-label">Tracked Vehicles</div>
+                    <div class="info-value" id="trackedCount">0</div>
+                </div>
+            </div>
+            <div id="trackList" class="track-list" style="margin-top: 15px;"></div>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = 'http://localhost:8001';
+        const REFRESH_INTERVAL = 2000; // 2 seconds
+
+        let feedId = null;
+        let autoRefresh = true;
+        let refreshTimer = null;
+        let feedData = null;
+
+        // Get feed ID from URL parameter
+        function getFeedIdFromUrl() {
+            const params = new URLSearchParams(window.location.search);
+            return params.get('id');
+        }
+
+        // Load feed metadata
+        async function loadFeedInfo() {
+            try {
+                const response = await fetch(`${API_BASE}/api/feeds`);
+                const data = await response.json();
+
+                feedData = data.feeds.find(f => f.id === feedId);
+
+                if (feedData) {
+                    document.getElementById('feedTitle').textContent = `CCTV: ${feedData.roadName || feedId}`;
+                    document.getElementById('feedId').textContent = feedData.id;
+                    document.getElementById('roadName').textContent = feedData.roadName || 'N/A';
+                    document.getElementById('location').textContent = feedData.locationMile || 'N/A';
+                    document.getElementById('direction').textContent = feedData.direction || 'N/A';
+
+                    updateStatus(data.status[feedId], data.vehicleDetected[feedId]);
+                }
+            } catch (error) {
+                console.error('Error loading feed info:', error);
+            }
+        }
+
+        // Update status badge
+        function updateStatus(isWorking, hasVehicles) {
+            const badge = document.getElementById('statusBadge');
+
+            if (!isWorking) {
+                badge.textContent = 'Offline';
+                badge.className = 'status-badge status-offline';
+            } else if (hasVehicles) {
+                badge.textContent = 'Vehicles Detected';
+                badge.className = 'status-badge status-vehicles';
+            } else {
+                badge.textContent = 'Online';
+                badge.className = 'status-badge status-online';
+            }
+        }
+
+        // Load feed image
+        async function loadFeedImage() {
+            const img = document.getElementById('feedImage');
+            const loading = document.getElementById('loading');
+            const error = document.getElementById('error');
+
+            try {
+                const timestamp = new Date().getTime();
+                img.src = `${API_BASE}/api/feeds/${feedId}/snapshot?t=${timestamp}`;
+
+                img.onload = () => {
+                    loading.style.display = 'none';
+                    error.style.display = 'none';
+                    img.style.display = 'block';
+                };
+
+                img.onerror = () => {
+                    loading.style.display = 'none';
+                    error.style.display = 'block';
+                    img.style.display = 'none';
+                };
+
+                // Update status
+                const response = await fetch(`${API_BASE}/api/feeds`);
+                const data = await response.json();
+                updateStatus(data.status[feedId], data.vehicleDetected[feedId]);
+
+            } catch (err) {
+                console.error('Error loading feed:', err);
+                loading.style.display = 'none';
+                error.style.display = 'block';
+            }
+        }
+
+        // Toggle auto refresh
+        function toggleAutoRefresh() {
+            autoRefresh = !autoRefresh;
+            const btn = document.getElementById('autoRefreshBtn');
+
+            if (autoRefresh) {
+                btn.textContent = 'Auto Refresh: ON';
+                btn.classList.add('active');
+                startAutoRefresh();
+            } else {
+                btn.textContent = 'Auto Refresh: OFF';
+                btn.classList.remove('active');
+                stopAutoRefresh();
+            }
+        }
+
+        // Manual refresh
+        function manualRefresh() {
+            loadFeedImage();
+            loadFeedInfo();
+        }
+
+        // Start auto refresh
+        function startAutoRefresh() {
+            if (refreshTimer) return;
+
+            refreshTimer = setInterval(() => {
+                loadFeedImage();
+                loadFeedInfo();
+            }, REFRESH_INTERVAL);
+        }
+
+        // Stop auto refresh
+        function stopAutoRefresh() {
+            if (refreshTimer) {
+                clearInterval(refreshTimer);
+                refreshTimer = null;
+            }
+        }
+
+        // Initialize
+        feedId = getFeedIdFromUrl();
+
+        if (!feedId) {
+            document.getElementById('loading').textContent = 'No feed ID provided';
+            document.getElementById('error').textContent = 'Please provide a feed ID in the URL (?id=FEED_ID)';
+            document.getElementById('error').style.display = 'block';
+        } else {
+            loadFeedInfo();
+            loadFeedImage();
+            startAutoRefresh();
+        }
+
+        // Cleanup on page unload
+        window.addEventListener('beforeunload', () => {
+            stopAutoRefresh();
+        });
+    </script>
+</body>
+</html>

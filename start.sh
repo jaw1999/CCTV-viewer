@@ -27,7 +27,7 @@ source venv/bin/activate
 # Install dependencies with increased timeout for large packages (torch, cuda)
 echo "Installing/updating dependencies..."
 echo "Note: First-time installation may take 10-15 minutes due to large ML packages"
-pip install --timeout 300 -r requirements.txt
+pip install -r requirements.txt
 
 # Check if installation was successful
 if [ $? -ne 0 ]; then

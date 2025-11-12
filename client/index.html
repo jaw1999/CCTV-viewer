@@ -29,6 +29,28 @@
         .header h1 {
             font-size: 24px;
             margin-bottom: 10px;
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        }
+
+        .map-button {
+            padding: 8px 20px;
+            background: #0066cc;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 500;
+            text-decoration: none;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .map-button:hover {
+            background: #0052a3;
         }
 
         .controls {
@@ -379,11 +401,17 @@
 </head>
 <body>
     <div class="header">
-        <h1>Taiwan Highway CCTV Viewer - Real-time</h1>
+        <h1>
+            Taiwan Highway CCTV Viewer - Real-time
+            <a href="map.html" class="map-button" target="_blank">
+                Map View
+            </a>
+        </h1>
         <div class="stats">
             <div class="stat">Total: <span id="totalCount">0</span></div>
             <div class="stat">Displayed: <span id="displayedCount">0</span></div>
             <div class="stat">Online: <span id="workingCount">0</span></div>
+            <div class="stat">Vehicles: <span id="vehicleCount">0</span></div>
             <div class="stat">Refresh Rate: <span id="refreshRate">0.0s</span></div>
         </div>
 
@@ -508,6 +536,7 @@
 
     <script>
         const API_URL = 'http://localhost:8001';
+        const WS_URL = 'ws://localhost:8001';
         const REFRESH_INTERVAL = 2000; // 2 seconds for grid
         const MODAL_REFRESH_INTERVAL = 500; // 0.5 seconds for modal
 
@@ -519,6 +548,8 @@
         let refreshIntervalId = null;
         let modalRefreshIntervalId = null;
         let currentModalFeedId = null;
+        let ws = null;
+        let wsReconnectTimeout = null;
 
         // Translate direction codes to English
         function translateDirection(dir) {
@@ -671,7 +702,9 @@
         // Update working count
         function updateWorkingCount() {
             const working = Object.values(feedStatus).filter(s => s).length;
+            const vehicles = Object.values(feedVehicleDetected).filter(v => v).length;
             document.getElementById('workingCount').textContent = working;
+            document.getElementById('vehicleCount').textContent = vehicles;
         }
 
         // Search functionality
@@ -915,6 +948,97 @@
             if (e.target.id === 'streamOutModal') closeStreamOutModal();
         });
 
+        // WebSocket Connection for Real-Time Updates
+        function connectWebSocket() {
+            console.log('Connecting to WebSocket...');
+            ws = new WebSocket(`${WS_URL}/ws`);
+
+            ws.onopen = () => {
+                console.log('WebSocket connected');
+                if (wsReconnectTimeout) {
+                    clearTimeout(wsReconnectTimeout);
+                    wsReconnectTimeout = null;
+                }
+            };
+
+            ws.onmessage = (event) => {
+                try {
+                    const data = JSON.parse(event.data);
+                    handleWebSocketMessage(data);
+                } catch (error) {
+                    console.error('Error parsing WebSocket message:', error);
+                }
+            };
+
+            ws.onerror = (error) => {
+                console.error('WebSocket error:', error);
+            };
+
+            ws.onclose = () => {
+                console.log('WebSocket disconnected. Reconnecting in 5 seconds...');
+                ws = null;
+                wsReconnectTimeout = setTimeout(connectWebSocket, 5000);
+            };
+        }
+
+        function handleWebSocketMessage(data) {
+            switch (data.type) {
+                case 'detection':
+                    // Update vehicle detection status
+                    feedVehicleDetected[data.feed_id] = true;
+                    updateWorkingCount();
+
+                    // Update the badge on the feed card if visible
+                    const card = document.querySelector(`.feed-card[data-feed-id="${data.feed_id}"]`);
+                    if (card) {
+                        const thumbnail = card.querySelector('.feed-thumbnail');
+                        if (thumbnail && !thumbnail.querySelector('.vehicle-badge')) {
+                            thumbnail.insertAdjacentHTML('beforeend', '<div class="vehicle-badge">TAI OCCUPIED</div>');
+                        }
+                    }
+
+                    // Show notification in console with detection data
+                    const detectionInfo = data.data || {};
+                    const vehicleCount = detectionInfo.vehicle_count || 'unknown';
+                    const vehicleTypes = detectionInfo.vehicle_types ? detectionInfo.vehicle_types.join(', ') : 'unknown types';
+                    console.log(`🚗 Vehicle detected: ${data.feed_id} - ${vehicleCount} vehicles (${vehicleTypes})`);
+                    break;
+
+                case 'feed_status':
+                    // Update feed status
+                    feedStatus[data.feed_id] = data.is_working;
+                    feedVehicleDetected[data.feed_id] = data.has_vehicles;
+                    updateWorkingCount();
+
+                    // Update badge based on status
+                    const statusCard = document.querySelector(`.feed-card[data-feed-id="${data.feed_id}"]`);
+                    if (statusCard) {
+                        const thumbnail = statusCard.querySelector('.feed-thumbnail');
+                        const badge = thumbnail?.querySelector('.vehicle-badge');
+
+                        if (data.has_vehicles && !badge && thumbnail) {
+                            thumbnail.insertAdjacentHTML('beforeend', '<div class="vehicle-badge">TAI OCCUPIED</div>');
+                        } else if (!data.has_vehicles && badge) {
+                            badge.remove();
+                        }
+                    }
+                    break;
+
+                case 'heartbeat':
+                    // Server heartbeat - connection is alive
+                    console.debug('WebSocket heartbeat received');
+                    break;
+
+                case 'stats':
+                    // System statistics update
+                    console.debug('Stats update received:', data.data);
+                    break;
+
+                default:
+                    console.log('Unknown WebSocket message type:', data.type);
+            }
+        }
+
         // Expose API for YOLO integration
         window.cctvViewer = {
             getAllFeeds: () => allFeeds,
@@ -922,11 +1046,13 @@
             getDisplayedFeeds: () => displayedFeeds,
             getFeedImage: (feedId) => document.querySelector(`img.feed-stream[data-feed-id="${feedId}"]`),
             getAllFeedImages: () => Array.from(document.querySelectorAll('img.feed-stream')),
-            getFeedStatus: () => feedStatus
+            getFeedStatus: () => feedStatus,
+            getWebSocket: () => ws
         };
 
         // Initialize
         loadFeeds();
+        connectWebSocket();
     </script>
 </body>
 </html>
