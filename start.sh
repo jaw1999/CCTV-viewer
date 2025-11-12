@@ -24,9 +24,24 @@ fi
 echo "Activating virtual environment..."
 source venv/bin/activate
 
-# Install dependencies
+# Install dependencies with increased timeout for large packages (torch, cuda)
 echo "Installing/updating dependencies..."
-pip install -q -r requirements.txt
+echo "Note: First-time installation may take 10-15 minutes due to large ML packages"
+pip install --timeout 300 -r requirements.txt
+
+# Check if installation was successful
+if [ $? -ne 0 ]; then
+    echo ""
+    echo "ERROR: Failed to install dependencies"
+    echo "This is often due to network timeouts with large packages (PyTorch, CUDA)"
+    echo ""
+    echo "You can try:"
+    echo "1. Run the script again (it will resume from cache)"
+    echo "2. Install manually: source venv/bin/activate && pip install --timeout 300 -r requirements.txt"
+    echo ""
+    deactivate 2>/dev/null
+    exit 1
+fi
 
 echo ""
 echo "Starting backend server on port 8001..."
@@ -36,6 +51,14 @@ echo ""
 # Start backend in background
 python backend/main.py &
 BACKEND_PID=$!
+
+# Check if backend started successfully
+sleep 1
+if ! ps -p $BACKEND_PID > /dev/null; then
+    echo "ERROR: Backend failed to start"
+    echo "Check backend/main.py for errors"
+    exit 1
+fi
 
 # Wait for backend to start
 sleep 2
