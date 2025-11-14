@@ -4,3 +4,10 @@ __pycache__/
 *.pyc
 .DS_Store
 *.pt
+
+# Database files (runtime data)
+*.db
+*.db-journal
+*.db-shm
+*.db-wal
+data/
