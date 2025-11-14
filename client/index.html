@@ -535,8 +535,10 @@
     </div>
 
     <script>
-        const API_URL = 'http://localhost:8001';
-        const WS_URL = 'ws://localhost:8001';
+        // Dynamic API URLs based on current hostname
+        const hostname = window.location.hostname;
+        const API_URL = `http://${hostname}:8001`;
+        const WS_URL = `ws://${hostname}:8001`;
         const REFRESH_INTERVAL = 2000; // 2 seconds for grid
         const MODAL_REFRESH_INTERVAL = 500; // 0.5 seconds for modal
 

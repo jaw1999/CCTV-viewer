@@ -281,7 +281,9 @@
     </div>
 
     <script>
-        const API_BASE = 'http://localhost:8001';
+        // Dynamic API URL based on current hostname
+        const hostname = window.location.hostname;
+        const API_BASE = `http://${hostname}:8001`;
         const REFRESH_INTERVAL = 2000; // 2 seconds
 
         let feedId = null;

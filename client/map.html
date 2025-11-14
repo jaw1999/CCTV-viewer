@@ -289,8 +289,10 @@
     <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
 
     <script>
-        const API_BASE = 'http://localhost:8001';
-        const WS_URL = 'ws://localhost:8001';
+        // Dynamic API URLs based on current hostname
+        const hostname = window.location.hostname;
+        const API_BASE = `http://${hostname}:8001`;
+        const WS_URL = `ws://${hostname}:8001`;
         let map;
         let markers = L.markerClusterGroup();
         let allFeeds = [];
