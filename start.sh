@@ -77,7 +77,11 @@ echo "Frontend:    http://0.0.0.0:8000"
 echo ""
 echo "Access from:"
 echo "  - Local:   http://localhost:8000"
-echo "  - Network: http://$(hostname -I | awk '{print $1}'):8000"
+# Get local IP address (macOS compatible)
+LOCAL_IP=$(ifconfig | grep "inet " | grep -v 127.0.0.1 | awk '{print $2}' | head -n 1)
+if [ -n "$LOCAL_IP" ]; then
+    echo "  - Network: http://${LOCAL_IP}:8000"
+fi
 echo ""
 echo "Press Ctrl+C to stop all servers"
 echo "==================================="

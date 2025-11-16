@@ -10,6 +10,7 @@ import time
 import socket
 import uuid
 import hashlib
+import os
 from datetime import datetime, timezone
 from typing import Dict, List, Optional
 from io import BytesIO
@@ -24,7 +25,7 @@ import yaml
 from fastapi import FastAPI, HTTPException, Response, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
-from fastapi.responses import StreamingResponse
+from fastapi.responses import StreamingResponse, FileResponse
 from PIL import Image
 from ultralytics import YOLO
 from pydantic import BaseModel
@@ -176,8 +177,8 @@ def send_cot_udp(message: str, ip: str, port: int):
         print(f"Error sending CoT message: {e}")
 
 
-def publish_lattice_entity(feed: Dict, integration_name: str):
-    """Publish entity to Lattice with vehicle detection"""
+def publish_lattice_entity(feed: Dict, integration_name: str, annotated_image: bytes = None):
+    """Publish entity to Lattice with vehicle detection and image"""
     global lattice_client
 
     if lattice_client is None:
@@ -185,8 +186,9 @@ def publish_lattice_entity(feed: Dict, integration_name: str):
         return
 
     try:
-        from anduril import Location, Position, Aliases, Provenance, Ontology, MilView
+        from anduril import Location, Position, Aliases, Provenance, Ontology, MilView, Media, MediaItem, Enu
         from datetime import timedelta
+        import math
 
         # Parse lat/lon
         lat = float(feed.get('lat', '0.0'))
@@ -213,6 +215,56 @@ def publish_lattice_entity(feed: Dict, integration_name: str):
         print(f"  Description: {description}")
         print(f"  Alias: {entity_name_alias}")
 
+        # Upload detection image to Objects API if provided
+        media = None
+        if annotated_image:
+            try:
+                # IMPORTANT: Use flat naming (no slashes) - slashes don't work in sandbox
+                # Format: integration-entity_id-timestamp.jpg
+                object_path = f"{integration_name}-{entity_id}-{now.strftime('%Y%m%d_%H%M%S')}.jpg"
+
+                lattice_client.objects.upload_object(
+                    object_path=object_path,
+                    request=annotated_image
+                )
+
+                # Reference the uploaded object in Media
+                # MediaItemType is a string literal union, use "MEDIA_TYPE_IMAGE" directly
+                # relative_path should be the path relative to environment base URL
+                media = Media(
+                    media=[
+                        MediaItem(
+                            type="MEDIA_TYPE_IMAGE",
+                            relative_path=f"api/v1/objects/{object_path}"
+                        )
+                    ]
+                )
+                print(f"  📷 Uploaded detection image to {object_path} ({len(annotated_image)} bytes)")
+            except Exception as img_error:
+                print(f"  ⚠ Failed to upload image: {img_error}")
+
+        # Calculate unit velocity vector based on road direction for heading indication
+        # We only know direction, not speed, so use unit vector (magnitude=1) for heading only
+        direction = feed.get('direction', '').upper()
+        velocity_enu = None
+        if direction:
+            # Map direction to unit velocity vector (magnitude = 1.0)
+            # ENU: East-North-Up coordinate system
+            # Using unit vector since we don't have actual speed data
+            direction_map = {
+                'E': Enu(e=1.0, n=0.0, u=0.0),      # East
+                'W': Enu(e=-1.0, n=0.0, u=0.0),     # West
+                'N': Enu(e=0.0, n=1.0, u=0.0),      # North
+                'S': Enu(e=0.0, n=-1.0, u=0.0),     # South
+                'NE': Enu(e=1.0/math.sqrt(2), n=1.0/math.sqrt(2), u=0.0),
+                'NW': Enu(e=-1.0/math.sqrt(2), n=1.0/math.sqrt(2), u=0.0),
+                'SE': Enu(e=1.0/math.sqrt(2), n=-1.0/math.sqrt(2), u=0.0),
+                'SW': Enu(e=-1.0/math.sqrt(2), n=-1.0/math.sqrt(2), u=0.0),
+            }
+            velocity_enu = direction_map.get(direction)
+            if velocity_enu:
+                print(f"  🧭 Added heading: {direction}")
+
         # Publish entity using keyword arguments
         response = lattice_client.entities.publish_entity(
             entity_id=entity_id,
@@ -225,7 +277,8 @@ def publish_lattice_entity(feed: Dict, integration_name: str):
                     latitude_degrees=lat,
                     longitude_degrees=lon,
                     altitude_hae_meters=0.0
-                )
+                ),
+                velocity_enu=velocity_enu  # Unit vector for heading only, no speed data
             ),
             aliases=Aliases(
                 name=entity_name_alias
@@ -242,7 +295,8 @@ def publish_lattice_entity(feed: Dict, integration_name: str):
                 integration_name=integration_name,
                 data_type="CCTV",
                 source_update_time=now
-            )
+            ),
+            media=media
         )
 
         print(f"✓ Successfully published entity {entity_id}")
@@ -271,6 +325,11 @@ def initialize_lattice_client(env_token: str, sandbox_token: str = None, base_ur
         # Debug: Check if tokens are provided
         env_token_preview = f"{env_token[:10]}..." if len(env_token) > 10 else "EMPTY/SHORT"
         print(f"Initializing Lattice with environment token: {env_token_preview}")
+
+        # Ensure base_url uses HTTPS
+        if base_url and base_url.startswith("http://"):
+            base_url = base_url.replace("http://", "https://")
+            print(f"⚠ Fixed base_url protocol to HTTPS: {base_url}")
 
         # For sandbox environments, we need BOTH tokens
         # Use the SDK's headers parameter to pass the sandbox token
@@ -645,7 +704,7 @@ async def update_feed_cache_worker():
                                             cot_msg = generate_cot_message(feed_info)
                                             send_cot_udp(cot_msg, stream_config["ip"], stream_config["port"])
                                         elif stream_config["format"] == "lattice":
-                                            publish_lattice_entity(feed_info, stream_config["latticeIntegration"])
+                                            publish_lattice_entity(feed_info, stream_config["latticeIntegration"], annotated_img)
                                     except Exception as e:
                                         print(f"Error streaming {stream_config['format']} for {feed_id}: {e}")
                         else:
