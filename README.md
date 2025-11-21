@@ -18,6 +18,13 @@ Real-time viewer for 2,500+ Taiwan Highway Bureau CCTV feeds with YOLOv8 vehicle
   - Async operations throughout
   - In-memory caching
 - **REST API**: Comprehensive endpoints for feeds, stats, search, and map data
+- **Operational Monitoring**:
+  - Health check endpoints for all system components
+  - Prometheus metrics export for performance monitoring
+  - Structured JSON logging for debugging
+  - Circuit breaker pattern for graceful degradation
+  - Alert management system for critical events
+  - Real-time operational dashboard UI
 
 ### Frontend
 - **Grid View** ([index.html](client/index.html))
@@ -40,6 +47,17 @@ Real-time viewer for 2,500+ Taiwan Highway Bureau CCTV feeds with YOLOv8 vehicle
   - High-frequency updates (500ms)
   - Full camera details and location
   - Vehicle detection indicators
+
+- **Monitoring Dashboard** ([monitoring.html](client/monitoring.html))
+  - Real-time system health visualization (auto-refresh every 5 seconds)
+  - Component status monitoring (Database, YOLO, HTTP client, WebSocket, Cache, Tracker, Feed source)
+  - System metrics (CPU, memory, disk usage)
+  - Feed statistics with availability progress bars
+  - Performance metrics (cache size, active connections, circuit breaker state)
+  - Database statistics (detection count, track count)
+  - Recent alerts display with severity levels
+  - Database reset functionality
+  - Dark theme responsive UI
 
 ## Architecture
 
@@ -89,6 +107,8 @@ The startup script will:
 4. Start frontend server on port 8000
 5. Handle graceful shutdown with Ctrl+C
 
+**Access the monitoring dashboard:** http://localhost:8000/monitoring.html
+
 ### Manual Setup
 
 **Terminal 1 - Backend:**
@@ -108,6 +128,137 @@ python3 -m http.server 8000
 Then open: **http://localhost:8000**
 
 ## API Endpoints
+
+### Health & Monitoring Endpoints
+
+#### GET /health
+Comprehensive health check for all system components
+
+**Response:**
+```json
+{
+  "status": "healthy",
+  "timestamp": "2025-11-21T10:30:00Z",
+  "components": [
+    {
+      "component": "database",
+      "status": "healthy",
+      "message": "Database connection healthy",
+      "latency_ms": 1.2
+    },
+    {
+      "component": "yolo_model",
+      "status": "healthy",
+      "message": "YOLO model loaded and ready"
+    }
+  ],
+  "system": {
+    "cpu_percent": 25.3,
+    "memory": {
+      "total_gb": 16.0,
+      "used_gb": 8.5,
+      "percent": 53.1
+    },
+    "disk": {
+      "total_gb": 500.0,
+      "used_gb": 250.0,
+      "percent": 50.0
+    }
+  }
+}
+```
+
+**Components monitored:**
+- Database connectivity & performance
+- YOLO model availability
+- HTTP client health
+- WebSocket manager status
+- Cache health & size
+- Vehicle tracker status
+- Feed source availability
+
+#### GET /health/live
+Kubernetes liveness probe - simple check if server is running
+
+**Response:** `{"status": "alive", "timestamp": "..."}`
+
+#### GET /health/ready
+Kubernetes readiness probe - check if system is ready for traffic
+
+**Response:** `{"status": "ready", "timestamp": "..."}` (200 if ready, 503 if not)
+
+#### GET /metrics
+Prometheus metrics export endpoint for monitoring and alerting
+
+**Metrics categories:**
+- **Detection metrics**: `cctv_detections_total`, `cctv_detection_confidence`, `cctv_tracks_total`
+- **Performance metrics**: `cctv_yolo_inference_seconds`, `cctv_feed_fetch_seconds`, `cctv_cycle_duration_seconds`
+- **System metrics**: `cctv_feeds_total`, `cctv_feeds_online`, `cctv_cache_size_bytes`, `cctv_active_websockets`
+- **Error metrics**: `cctv_errors_total`, `cctv_feed_failures_total`
+
+**Example queries:**
+```promql
+# Feed availability percentage
+(cctv_feeds_online / cctv_feeds_total) * 100
+
+# Detection rate per minute
+rate(cctv_detections_total[1m])
+
+# P95 YOLO inference time
+histogram_quantile(0.95, rate(cctv_yolo_inference_seconds_bucket[5m]))
+```
+
+#### GET /api/operational/status
+Operational dashboard data endpoint
+
+**Response:**
+```json
+{
+  "uptime_seconds": 3600,
+  "uptime_human": "1h 0m",
+  "feeds": {
+    "total": 2402,
+    "online": 1876,
+    "offline": 526,
+    "online_percentage": 78.1,
+    "with_vehicles": 145
+  },
+  "cache": {
+    "size_mb": 450.5,
+    "items": 2402,
+    "avg_size_kb": 192.0
+  },
+  "components": {
+    "yolo_model": "healthy",
+    "database": "healthy",
+    "tracker": "healthy",
+    "websocket": "healthy"
+  },
+  "websocket": {
+    "active_connections": 2
+  },
+  "circuit_breakers": {
+    "feed_fetcher": {
+      "state": "closed",
+      "failure_count": 0
+    }
+  },
+  "alerts": {
+    "recent": [
+      {
+        "timestamp": "2025-11-21T10:30:00Z",
+        "type": "feed_source_degraded",
+        "severity": "warning",
+        "message": "Feed availability below threshold"
+      }
+    ]
+  },
+  "database": {
+    "detections_count": 125000,
+    "tracks_count": 45000
+  }
+}
+```
 
 ### Core Endpoints
 
@@ -239,6 +390,27 @@ Configure Stream Out integration
 
 #### GET /api/stream/config
 Get current Stream Out configuration
+
+### Database Management Endpoints
+
+#### POST /api/database/reset
+Reset database - clear all detections and tracks
+
+**Request:** POST with empty body
+
+**Response:**
+```json
+{
+  "status": "success",
+  "message": "Database reset successfully",
+  "deleted": {
+    "detections": 125000,
+    "tracks": 45000
+  }
+}
+```
+
+**Note:** This triggers a warning alert in the alert system
 
 ### WebSocket Endpoint
 
@@ -387,6 +559,105 @@ performance:
   selective_skip_interval: 2
 ```
 
+## Operational Monitoring
+
+### Health Checks
+The system provides comprehensive health monitoring for all components:
+
+- **Database**: Connection health, query latency, connection count
+- **YOLO Model**: Model availability and readiness
+- **HTTP Client**: Feed fetcher operational status
+- **WebSocket Manager**: Connection manager health
+- **Cache**: Memory usage and size limits
+- **Vehicle Tracker**: Tracking system status
+- **Feed Source**: Feed availability and online percentage
+
+### Prometheus Metrics
+Export metrics for monitoring with Prometheus/Grafana:
+
+```bash
+# Scrape metrics
+curl http://localhost:8001/metrics
+
+# Example Prometheus config
+scrape_configs:
+  - job_name: 'cctv-viewer'
+    static_configs:
+      - targets: ['localhost:8001']
+    metrics_path: '/metrics'
+    scrape_interval: 15s
+```
+
+**Key metrics to monitor:**
+- Feed availability: `(cctv_feeds_online / cctv_feeds_total) * 100` → Target: >80%
+- Detection latency: `histogram_quantile(0.95, cctv_yolo_inference_seconds_bucket)` → Target: <200ms
+- Error rate: `rate(cctv_errors_total[5m])` → Target: <5%
+- Cache size: `cctv_cache_size_bytes / 1024^3` → Target: <1GB
+
+### Structured Logging
+All logs are output in JSON format for easy parsing:
+
+```bash
+# View logs with jq
+tail -f logs/cctv.log | jq
+
+# Filter by level
+tail -f logs/cctv.log | jq 'select(.level == "ERROR")'
+
+# Watch specific component
+tail -f logs/cctv.log | jq 'select(.context.component == "database")'
+```
+
+### Circuit Breaker
+Protects against cascading failures:
+- Monitors feed fetcher operations
+- Opens after 10 consecutive failures
+- 5-minute recovery timeout before retrying
+- States: closed (normal), open (disabled), half_open (testing)
+
+Check state: `curl http://localhost:8001/api/operational/status | jq '.circuit_breakers'`
+
+### Alert Management
+Tracks critical system events with 5-minute cooldown:
+
+**Alert types:**
+- `startup_failure` - Component failed to start (critical)
+- `database_init_failure` - Database initialization error (critical)
+- `high_error_rate` - Error rate threshold exceeded (error)
+- `feed_source_degraded` - Too many feeds offline (warning)
+- `cache_overflow` - Cache size exceeds limits (warning)
+
+View recent alerts: `curl http://localhost:8001/api/operational/status | jq '.alerts.recent'`
+
+### Monitoring Dashboard
+Access the visual monitoring dashboard at http://localhost:8000/monitoring.html
+
+Features:
+- Real-time component health visualization
+- System metrics (CPU, memory, disk)
+- Feed statistics with animated progress bars
+- Performance metrics
+- Database statistics
+- Recent alerts display
+- Database reset button
+- Auto-refresh every 5 seconds
+
+### Quick Health Check Commands
+
+```bash
+# Check overall system status
+curl http://localhost:8001/health | jq '.status'
+
+# Get unhealthy components
+curl http://localhost:8001/health | jq '.components[] | select(.status != "healthy")'
+
+# Check feed availability percentage
+curl http://localhost:8001/api/operational/status | jq '.feeds.online_percentage'
+
+# Watch system health (refreshes every 2 seconds)
+watch -n 2 'curl -s http://localhost:8001/health | jq ".status, .system"'
+```
+
 ## Technical Details
 
 - **Feeds**: 2,402 Taiwan highway camera feeds
@@ -395,6 +666,7 @@ performance:
 - **Memory**: ~450 MB for cached JPEGs
 - **Refresh Rate**: 2 seconds (grid), 0.5 seconds (single feed)
 - **Detection Rate**: ~1876 feeds processed per cycle (~20-30 seconds)
+- **Observability**: Prometheus metrics, structured logging, health checks, circuit breakers
 
 ## Troubleshooting
 
@@ -411,7 +683,9 @@ python3 backend/main.py
 - Check backend console for errors
 - Verify network connectivity to Taiwan
 - Some feeds may actually be offline (normal - typically ~500/2400)
-- Check `/api/stats` endpoint for system health
+- Check `/api/stats` or `/health` endpoint for system health
+- Check feed availability: `curl http://localhost:8001/api/operational/status | jq '.feeds'`
+- View monitoring dashboard: http://localhost:8000/monitoring.html
 
 ### YOLO not detecting vehicles
 - Check backend logs for "YOLO model loaded successfully"
@@ -438,6 +712,8 @@ python3 backend/main.py
 - 2,400 feeds = ~480 MB baseline
 - This is normal and expected
 - Database grows over time (detections history)
+- Monitor cache size: `curl http://localhost:8001/api/operational/status | jq '.cache'`
+- Check system memory: `curl http://localhost:8001/health | jq '.system.memory'`
 
 ### Map markers not updating
 - Check browser console for "Map: WebSocket connected"
@@ -449,16 +725,20 @@ python3 backend/main.py
 ```
 videoviewer/
 ├── backend/
-│   ├── main.py                 # FastAPI server + YOLO + WebSocket
+│   ├── main.py                 # FastAPI server + YOLO + WebSocket + monitoring
 │   ├── database.py             # SQLAlchemy models and DB manager
 │   ├── tracker.py              # Multi-object tracking
-│   └── websocket_manager.py    # WebSocket connection handler
+│   ├── websocket_manager.py    # WebSocket connection handler
+│   └── observability.py        # Health checks, metrics, logging, alerts
 ├── client/
 │   ├── index.html              # Grid view with vehicle detection
 │   ├── map.html                # Interactive map view
-│   └── feed.html               # Single feed detailed view
+│   ├── feed.html               # Single feed detailed view
+│   └── monitoring.html         # Operational monitoring dashboard
 ├── data/
 │   └── detections.db           # SQLite database (auto-created)
+├── logs/
+│   └── cctv.log                # Structured JSON logs (auto-created)
 ├── venv/                       # Python virtual environment
 ├── config.yaml                 # Configuration file
 ├── requirements.txt            # Python dependencies

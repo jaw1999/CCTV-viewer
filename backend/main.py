@@ -6,6 +6,7 @@ Ingests and caches all 2,500+ feeds in real-time
 
 import asyncio
 import ssl
+import sys
 import time
 import socket
 import uuid
@@ -36,11 +37,22 @@ try:
     from .database import DatabaseManager
     from .tracker import TrackerManager, Detection as TrackerDetection
     from .websocket_manager import ConnectionManager, handle_websocket_messages
+    from .observability import (
+        MetricsCollector, HealthChecker, StructuredLogger,
+        CircuitBreaker, AlertManager
+    )
 except ImportError:
     # Fallback for direct execution
     from database import DatabaseManager
     from tracker import TrackerManager, Detection as TrackerDetection
     from websocket_manager import ConnectionManager, handle_websocket_messages
+    from observability import (
+        MetricsCollector, HealthChecker, StructuredLogger,
+        CircuitBreaker, AlertManager
+    )
+
+# Import Prometheus client for metrics endpoint
+from prometheus_client import make_asgi_app
 
 # Load configuration
 def load_config() -> dict:
@@ -82,6 +94,13 @@ tracker_manager: Optional[TrackerManager] = None
 
 # WebSocket manager
 ws_manager = ConnectionManager()
+
+# Observability components
+metrics = MetricsCollector()
+logger = StructuredLogger("cctv.main", log_level=CONFIG.get('logging', {}).get('level', 'INFO'))
+alert_manager = AlertManager(CONFIG)
+feed_circuit_breaker = CircuitBreaker(failure_threshold=10, recovery_timeout=300.0)
+health_checker = None  # Initialized in lifespan
 
 # Detection settings from config
 VEHICLE_CLASSES = CONFIG.get('detection', {}).get('vehicle_classes', [2, 5, 7])
@@ -788,26 +807,58 @@ async def initialize_feeds():
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan events"""
-    global yolo_model, executor, db_manager, tracker_manager
+    global yolo_model, executor, db_manager, tracker_manager, health_checker
     import os
 
+    # Create application state object for health checker
+    class AppState:
+        def __init__(self):
+            self.feeds_data = feeds_data
+            self.feed_cache = feed_cache
+            self.feed_status = feed_status
+            self.yolo_model = None
+            self.http_client = None  # HTTP client is created on-demand in fetch operations
+            self.ws_manager = ws_manager
+            self.db_manager = None
+            self.tracker_manager = None
+
+    app_state = AppState()
+    app.state.cctv = app_state
+
+    # Initialize health checker
+    health_checker = HealthChecker(app_state)
+
     # Startup
-    print("Starting Taiwan CCTV API (OPTIMIZED)...")
-    print("Loading YOLOv8n model...")
+    logger.info("Starting Taiwan CCTV API (OPTIMIZED)...")
+    logger.info("Loading YOLOv8n model...")
 
     # Load YOLO model (downloads automatically if not present)
     try:
         yolo_model = YOLO('yolov8n.pt')  # Nano model for speed
-        print("YOLOv8n model loaded successfully")
+        app_state.yolo_model = yolo_model
+        logger.info("YOLOv8n model loaded successfully")
+
+        # Set system info metrics
+        metrics.system_info.info({
+            'version': '1.0.0',
+            'model': 'yolov8n',
+            'python_version': str(sys.version_info[:3])
+        })
     except Exception as e:
-        print(f"Warning: Could not load YOLO model: {e}")
-        print("Vehicle detection will be disabled")
+        logger.error("Could not load YOLO model", error=str(e))
+        logger.warning("Vehicle detection will be disabled")
+        await alert_manager.send_alert(
+            alert_type="startup_failure",
+            severity="critical",
+            message="Failed to load YOLO model",
+            metadata={"error": str(e)}
+        )
 
     # OPTIMIZATION: Initialize ThreadPoolExecutor for YOLO inference
     # Use config value or CPU count
     max_workers = CONFIG.get('performance', {}).get('worker_threads', min(os.cpu_count() or 4, 8))
     executor = ThreadPoolExecutor(max_workers=max_workers)
-    print(f"ThreadPoolExecutor initialized with {max_workers} workers")
+    logger.info("ThreadPoolExecutor initialized", max_workers=max_workers)
 
     # Initialize database if enabled
     db_config = CONFIG.get('database', {})
@@ -830,7 +881,8 @@ async def lifespan(app: FastAPI):
         try:
             db_manager = DatabaseManager(database_url)
             await db_manager.init_db()
-            print(f"✓ Database initialized: {db_type}")
+            app_state.db_manager = db_manager
+            logger.info("Database initialized", db_type=db_type)
 
             # Schedule periodic cleanup
             async def cleanup_task():
@@ -844,10 +896,16 @@ async def lifespan(app: FastAPI):
 
             asyncio.create_task(cleanup_task())
         except Exception as e:
-            print(f"Warning: Could not initialize database: {e}")
+            logger.error("Could not initialize database", error=str(e))
             db_manager = None
+            await alert_manager.send_alert(
+                alert_type="database_init_failure",
+                severity="error",
+                message="Failed to initialize database",
+                metadata={"error": str(e)}
+            )
     else:
-        print("Database disabled in config")
+        logger.info("Database disabled in config")
 
     # Initialize tracker if enabled
     tracking_config = CONFIG.get('detection', {}).get('tracking', {})
@@ -857,9 +915,10 @@ async def lifespan(app: FastAPI):
             min_hits=tracking_config.get('min_hits', 3),
             iou_threshold=tracking_config.get('iou_threshold', 0.3)
         )
-        print(f"✓ Vehicle tracking initialized")
+        app_state.tracker_manager = tracker_manager
+        logger.info("Vehicle tracking initialized")
     else:
-        print("Vehicle tracking disabled in config")
+        logger.info("Vehicle tracking disabled in config")
 
     # Start background tasks
     asyncio.create_task(initialize_feeds())
@@ -874,18 +933,35 @@ async def lifespan(app: FastAPI):
                 await ws_manager.send_heartbeat()
 
         asyncio.create_task(heartbeat_task())
-        print(f"✓ WebSocket heartbeat started ({websocket_config.get('heartbeat_interval', 30)}s)")
+        logger.info("WebSocket heartbeat started", interval=websocket_config.get('heartbeat_interval', 30))
+
+    # Metrics update task
+    async def metrics_update_task():
+        """Periodically update Prometheus metrics"""
+        while True:
+            await asyncio.sleep(10)  # Update every 10 seconds
+            try:
+                metrics.feeds_total.set(len(feeds_data))
+                metrics.feeds_online.set(sum(1 for status in feed_status.values() if status))
+                metrics.feeds_with_vehicles.set(sum(1 for v in feed_vehicle_detected.values() if v))
+                metrics.cache_size_bytes.set(sum(len(v) for v in feed_cache.values()))
+                metrics.active_websockets.set(len(ws_manager.active_connections))
+            except Exception as e:
+                logger.error("Error updating metrics", error=str(e))
+
+    asyncio.create_task(metrics_update_task())
+    logger.info("Metrics update task started")
 
     yield
 
     # Shutdown (cleanup if needed)
-    print("Shutting down Taiwan CCTV API...")
+    logger.info("Shutting down Taiwan CCTV API...")
     if executor:
         executor.shutdown(wait=True)
-        print("ThreadPoolExecutor shut down")
+        logger.info("ThreadPoolExecutor shut down")
     if db_manager:
         await db_manager.close()
-        print("Database connection closed")
+        logger.info("Database connection closed")
 
 
 app = FastAPI(title="Taiwan CCTV API (Optimized)", lifespan=lifespan)
@@ -901,6 +977,10 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Mount Prometheus metrics endpoint
+metrics_app = make_asgi_app()
+app.mount("/metrics", metrics_app)
 
 
 @app.get("/")
@@ -960,6 +1040,71 @@ async def get_stream(feed_id: str):
     )
 
 
+@app.get("/health")
+async def health_check():
+    """
+    Comprehensive health check endpoint for monitoring and alerting.
+    Returns detailed status of all system components.
+    """
+    if health_checker is None:
+        return {
+            "status": "unhealthy",
+            "message": "Health checker not initialized",
+            "timestamp": datetime.now(timezone.utc).isoformat()
+        }
+
+    try:
+        health_status = await health_checker.check_all()
+        return health_status
+    except Exception as e:
+        logger.error("Health check failed", error=str(e))
+        return {
+            "status": "unhealthy",
+            "message": f"Health check error: {str(e)}",
+            "timestamp": datetime.now(timezone.utc).isoformat()
+        }
+
+
+@app.get("/health/live")
+async def liveness_probe():
+    """
+    Liveness probe for Kubernetes/container orchestration.
+    Returns 200 if the application is running.
+    """
+    return {"status": "alive", "timestamp": datetime.now(timezone.utc).isoformat()}
+
+
+@app.get("/health/ready")
+async def readiness_probe():
+    """
+    Readiness probe for Kubernetes/container orchestration.
+    Returns 200 if the application is ready to serve traffic.
+    """
+    # Check critical components
+    is_ready = (
+        yolo_model is not None and
+        len(feeds_data) > 0 and
+        (db_manager is not None or not CONFIG.get('database', {}).get('enabled', True))
+    )
+
+    if is_ready:
+        return {
+            "status": "ready",
+            "feeds_loaded": len(feeds_data),
+            "timestamp": datetime.now(timezone.utc).isoformat()
+        }
+    else:
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "status": "not_ready",
+                "yolo_loaded": yolo_model is not None,
+                "feeds_loaded": len(feeds_data),
+                "timestamp": datetime.now(timezone.utc).isoformat()
+            }
+        )
+
+
 @app.get("/api/stats")
 async def get_stats():
     """Get system statistics"""
@@ -981,6 +1126,86 @@ async def get_stats():
         stats["websocket"] = ws_manager.get_stats()
 
     return stats
+
+
+@app.get("/api/operational/status")
+async def get_operational_status():
+    """
+    Operational status dashboard endpoint.
+    Provides comprehensive system metrics for monitoring and troubleshooting.
+    """
+    working = sum(1 for status in feed_status.values() if status)
+    vehicles_detected = sum(1 for v in feed_vehicle_detected.values() if v)
+    cache_size_mb = sum(len(img) for img in feed_cache.values()) / (1024 * 1024)
+
+    # Calculate uptime metrics
+    import psutil
+    process = psutil.Process()
+    uptime_seconds = time.time() - process.create_time()
+
+    operational_status = {
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "uptime_seconds": int(uptime_seconds),
+        "uptime_human": f"{int(uptime_seconds // 3600)}h {int((uptime_seconds % 3600) // 60)}m",
+
+        "feeds": {
+            "total": len(feeds_data),
+            "online": working,
+            "offline": len(feed_status) - working,
+            "online_percentage": round((working / len(feeds_data) * 100) if feeds_data else 0, 2),
+            "with_vehicles": vehicles_detected,
+            "last_update": last_update
+        },
+
+        "cache": {
+            "size_mb": round(cache_size_mb, 2),
+            "items": len(feed_cache),
+            "avg_size_kb": round((cache_size_mb * 1024 / len(feed_cache)) if feed_cache else 0, 2)
+        },
+
+        "components": {
+            "yolo_model": "loaded" if yolo_model else "not_loaded",
+            "database": "enabled" if db_manager else "disabled",
+            "tracker": "enabled" if tracker_manager else "disabled",
+            "websocket": "enabled" if ws_manager else "disabled"
+        },
+
+        "websocket": {
+            "active_connections": len(ws_manager.active_connections) if ws_manager else 0,
+            "stats": ws_manager.get_stats() if ws_manager else {}
+        },
+
+        "circuit_breakers": {
+            "feed_fetcher": feed_circuit_breaker.get_state()
+        },
+
+        "alerts": {
+            "recent": alert_manager.get_recent_alerts(limit=10)
+        }
+    }
+
+    # Add database stats if available
+    if db_manager:
+        try:
+            from database import Detection as DetectionModel, VehicleTrack as VehicleTrackModel
+            from sqlalchemy import func, select
+            async with db_manager.session() as session:
+                detection_count = await session.execute(
+                    select(func.count()).select_from(DetectionModel)
+                )
+                track_count = await session.execute(
+                    select(func.count()).select_from(VehicleTrackModel)
+                )
+
+                operational_status["database"] = {
+                    "detections_count": detection_count.scalar(),
+                    "tracks_count": track_count.scalar()
+                }
+        except Exception as e:
+            logger.error("Failed to get database stats", error=str(e))
+            operational_status["database"] = {"error": str(e)}
+
+    return operational_status
 
 
 @app.get("/api/feeds/{feed_id}/history")
@@ -1145,6 +1370,43 @@ async def set_stream_config(config: StreamConfig):
         print(f"Stream Out {status}: Lattice -> {config.latticeIntegration} @ {config.latticeUrl or 'default'}")
 
     return {"status": "success", "config": stream_config}
+
+
+@app.post("/api/database/reset")
+async def reset_database():
+    """Reset database - clear all detections and tracks"""
+    if not db_manager:
+        raise HTTPException(status_code=503, detail="Database not enabled")
+
+    try:
+        from database import Detection as DetectionModel, VehicleTrack as VehicleTrackModel
+        from sqlalchemy import delete
+
+        async with db_manager.session() as session:
+            # Delete all vehicle tracks
+            await session.execute(delete(VehicleTrackModel))
+            # Delete all detections
+            await session.execute(delete(DetectionModel))
+            await session.commit()
+
+        logger.info("Database reset completed - all detections and tracks cleared")
+
+        await alert_manager.send_alert(
+            alert_type="database_reset",
+            severity="warning",
+            message="Database has been manually reset",
+            metadata={"timestamp": datetime.now(timezone.utc).isoformat()}
+        )
+
+        return {
+            "status": "success",
+            "message": "Database reset completed",
+            "cleared": ["detections", "vehicle_tracks"]
+        }
+
+    except Exception as e:
+        logger.error("Failed to reset database", error=str(e))
+        raise HTTPException(status_code=500, detail=f"Database reset failed: {str(e)}")
 
 
 @app.websocket("/ws")
