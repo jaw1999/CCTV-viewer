@@ -2,7 +2,10 @@
 Database models and utilities for Taiwan CCTV Viewer
 """
 from datetime import datetime
-from sqlalchemy import create_engine, Column, Integer, String, Float, Boolean, DateTime, ForeignKey, Text
+from sqlalchemy import (
+    create_engine, Column, Integer, String, Float, Boolean,
+    DateTime, ForeignKey, Text, Index
+)
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import relationship, sessionmaker
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
@@ -39,6 +42,10 @@ class Feed(Base):
 class Detection(Base):
     """Individual vehicle detection event"""
     __tablename__ = 'detections'
+    __table_args__ = (
+        # Composite index for common queries (feed + time range)
+        Index('ix_detections_feed_timestamp', 'feed_id', 'timestamp'),
+    )
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     feed_id = Column(String(50), ForeignKey('feeds.id'), index=True)
@@ -62,6 +69,12 @@ class Detection(Base):
 class VehicleTrack(Base):
     """Tracked vehicle over time"""
     __tablename__ = 'vehicle_tracks'
+    __table_args__ = (
+        # Composite index for track lookup
+        Index('ix_tracks_feed_track', 'feed_id', 'track_id'),
+        # Index for cleanup queries
+        Index('ix_tracks_last_seen', 'last_seen'),
+    )
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     feed_id = Column(String(50), ForeignKey('feeds.id'), index=True)

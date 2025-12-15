@@ -687,15 +687,179 @@ class AlertManager:
             await self._send_webhook_alert(alert)
 
     async def _send_email_alert(self, alert: Dict):
-        """Send email alert (placeholder for implementation)"""
-        self.logger.info(f"Would send email alert: {alert['message']}")
-        # TODO: Implement SMTP email sending
+        """Send email alert via SMTP"""
+        email_config = self.config.get('alerts', {}).get('email', {})
+
+        try:
+            import smtplib
+            from email.mime.text import MIMEText
+            from email.mime.multipart import MIMEMultipart
+
+            smtp_host = email_config.get('smtp_host', 'smtp.gmail.com')
+            smtp_port = email_config.get('smtp_port', 587)
+            from_address = email_config.get('from_address', '')
+            to_addresses = email_config.get('to_addresses', [])
+            username = email_config.get('username', from_address)
+            password = email_config.get('password', '')
+
+            if not all([from_address, to_addresses, password]):
+                self.logger.warning("Email alert: Missing required configuration")
+                return
+
+            # Create message
+            msg = MIMEMultipart('alternative')
+            msg['Subject'] = f"[CCTV Alert] {alert['severity'].upper()}: {alert['type']}"
+            msg['From'] = from_address
+            msg['To'] = ', '.join(to_addresses)
+
+            # Plain text body
+            text_body = f"""
+CCTV Viewer Alert
+=================
+
+Type: {alert['type']}
+Severity: {alert['severity']}
+Time: {alert['timestamp']}
+
+Message:
+{alert['message']}
+
+Metadata:
+{json.dumps(alert.get('metadata', {}), indent=2)}
+"""
+
+            # HTML body
+            html_body = f"""
+<html>
+<head>
+    <style>
+        body {{ font-family: Arial, sans-serif; }}
+        .alert {{ padding: 20px; border-radius: 5px; margin: 20px 0; }}
+        .critical {{ background-color: #f8d7da; border: 1px solid #f5c6cb; }}
+        .error {{ background-color: #fff3cd; border: 1px solid #ffc107; }}
+        .warning {{ background-color: #fff3cd; border: 1px solid #ffeeba; }}
+        .info {{ background-color: #d1ecf1; border: 1px solid #bee5eb; }}
+        .metadata {{ background-color: #f8f9fa; padding: 10px; border-radius: 3px; }}
+    </style>
+</head>
+<body>
+    <h2>CCTV Viewer Alert</h2>
+    <div class="alert {alert['severity'].lower()}">
+        <strong>Type:</strong> {alert['type']}<br>
+        <strong>Severity:</strong> {alert['severity']}<br>
+        <strong>Time:</strong> {alert['timestamp']}<br>
+        <p><strong>Message:</strong> {alert['message']}</p>
+    </div>
+    <h3>Metadata</h3>
+    <div class="metadata">
+        <pre>{json.dumps(alert.get('metadata', {}), indent=2)}</pre>
+    </div>
+</body>
+</html>
+"""
+
+            msg.attach(MIMEText(text_body, 'plain'))
+            msg.attach(MIMEText(html_body, 'html'))
+
+            # Send email (run in thread to not block)
+            import asyncio
+            loop = asyncio.get_event_loop()
+            await loop.run_in_executor(None, self._send_smtp_email,
+                                       smtp_host, smtp_port, username, password,
+                                       from_address, to_addresses, msg)
+
+            self.logger.info(f"Email alert sent to {', '.join(to_addresses)}")
+
+        except ImportError:
+            self.logger.error("Email alert: smtplib not available")
+        except Exception as e:
+            self.logger.error(f"Email alert failed: {e}")
+
+    def _send_smtp_email(self, host, port, username, password, from_addr, to_addrs, msg):
+        """Send email via SMTP (synchronous, run in executor)"""
+        import smtplib
+
+        with smtplib.SMTP(host, port) as server:
+            server.starttls()
+            server.login(username, password)
+            server.sendmail(from_addr, to_addrs, msg.as_string())
 
     async def _send_webhook_alert(self, alert: Dict):
-        """Send webhook alert (placeholder for implementation)"""
-        self.logger.info(f"Would send webhook alert: {alert['message']}")
-        # TODO: Implement webhook HTTP POST
+        """Send webhook alert via HTTP POST"""
+        webhook_config = self.config.get('alerts', {}).get('webhook', {})
+        url = webhook_config.get('url', '')
+
+        if not url:
+            self.logger.warning("Webhook alert: No URL configured")
+            return
+
+        try:
+            import httpx
+
+            # Format payload (compatible with Slack, Discord, etc.)
+            payload = {
+                "text": f"*[{alert['severity'].upper()}]* {alert['type']}: {alert['message']}",
+                "attachments": [
+                    {
+                        "color": self._severity_color(alert['severity']),
+                        "fields": [
+                            {"title": "Type", "value": alert['type'], "short": True},
+                            {"title": "Severity", "value": alert['severity'], "short": True},
+                            {"title": "Time", "value": alert['timestamp'], "short": False},
+                            {"title": "Message", "value": alert['message'], "short": False},
+                        ]
+                    }
+                ],
+                # Also include raw data for custom webhooks
+                "alert": alert,
+            }
+
+            # Add custom headers if configured
+            headers = webhook_config.get('headers', {})
+            headers['Content-Type'] = 'application/json'
+
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                response = await client.post(url, json=payload, headers=headers)
+                response.raise_for_status()
+
+            self.logger.info(f"Webhook alert sent to {url}")
+
+        except ImportError:
+            self.logger.error("Webhook alert: httpx not available")
+        except Exception as e:
+            self.logger.error(f"Webhook alert failed: {e}")
+
+    def _severity_color(self, severity: str) -> str:
+        """Get color code for severity (Slack/Discord format)"""
+        colors = {
+            "critical": "#dc3545",  # Red
+            "error": "#fd7e14",     # Orange
+            "warning": "#ffc107",   # Yellow
+            "info": "#17a2b8",      # Blue
+        }
+        return colors.get(severity.lower(), "#6c757d")
 
     def get_recent_alerts(self, limit: int = 20) -> List[Dict]:
         """Get recent alerts"""
         return self.alert_history[-limit:]
+
+    def clear_cooldowns(self):
+        """Clear all alert cooldowns (useful for testing)"""
+        self.alert_cooldowns.clear()
+
+    def get_alert_stats(self) -> Dict[str, Any]:
+        """Get alert statistics"""
+        from collections import Counter
+
+        if not self.alert_history:
+            return {"total": 0, "by_type": {}, "by_severity": {}}
+
+        by_type = Counter(a["type"] for a in self.alert_history)
+        by_severity = Counter(a["severity"] for a in self.alert_history)
+
+        return {
+            "total": len(self.alert_history),
+            "by_type": dict(by_type),
+            "by_severity": dict(by_severity),
+            "active_cooldowns": len(self.alert_cooldowns),
+        }

@@ -3,71 +3,68 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>CCTV Viewer - Operational Dashboard</title>
+    <title>Operational Dashboard - Taiwan CCTV Viewer</title>
+    <link rel="stylesheet" href="styles/common.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
     <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
-
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
-            background: #0f172a;
-            color: #e2e8f0;
-            padding: 20px;
-        }
-
-        .header {
+        /* Dashboard-specific styles */
+        .dashboard-header {
             display: flex;
             justify-content: space-between;
             align-items: center;
-            margin-bottom: 30px;
-            padding-bottom: 20px;
-            border-bottom: 2px solid #1e293b;
+            margin-bottom: var(--spacing-6);
+            padding-bottom: var(--spacing-4);
+            border-bottom: 1px solid var(--color-border);
         }
 
-        .header h1 {
-            font-size: 28px;
-            font-weight: 600;
-            color: #f1f5f9;
-        }
-
-        .header .subtitle {
-            color: #94a3b8;
-            font-size: 14px;
-            margin-top: 5px;
-        }
-
-        .status-indicator {
+        .dashboard-title {
             display: flex;
             align-items: center;
-            gap: 10px;
-            padding: 10px 20px;
-            background: #1e293b;
-            border-radius: 8px;
+            gap: var(--spacing-4);
         }
 
-        .status-dot {
+        .dashboard-title h1 {
+            font-size: 1.75rem;
+            font-weight: 600;
+            color: var(--color-text-primary);
+        }
+
+        .dashboard-subtitle {
+            color: var(--color-text-muted);
+            font-size: 0.875rem;
+            margin-top: var(--spacing-1);
+        }
+
+        .status-badge {
+            display: flex;
+            align-items: center;
+            gap: var(--spacing-3);
+            padding: var(--spacing-3) var(--spacing-4);
+            background: var(--color-bg-secondary);
+            border-radius: var(--radius-lg);
+            border: 1px solid var(--color-border);
+        }
+
+        .status-badge .status-dot {
             width: 12px;
             height: 12px;
             border-radius: 50%;
             animation: pulse 2s infinite;
         }
 
-        .status-dot.healthy {
-            background: #10b981;
-            box-shadow: 0 0 10px #10b981;
+        .status-badge .status-dot.healthy {
+            background: var(--color-success);
+            box-shadow: 0 0 10px var(--color-success);
         }
 
-        .status-dot.degraded {
-            background: #f59e0b;
-            box-shadow: 0 0 10px #f59e0b;
+        .status-badge .status-dot.degraded {
+            background: var(--color-warning);
+            box-shadow: 0 0 10px var(--color-warning);
         }
 
-        .status-dot.unhealthy {
-            background: #ef4444;
-            box-shadow: 0 0 10px #ef4444;
+        .status-badge .status-dot.unhealthy {
+            background: var(--color-error);
+            box-shadow: 0 0 10px var(--color-error);
         }
 
         @keyframes pulse {
@@ -75,226 +72,30 @@
             50% { opacity: 0.5; }
         }
 
-        .grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-            gap: 20px;
-            margin-bottom: 20px;
-        }
-
-        .card {
-            background: #1e293b;
-            border-radius: 12px;
-            padding: 20px;
-            border: 1px solid #334155;
-        }
-
-        .card h2 {
-            font-size: 16px;
-            font-weight: 600;
-            color: #f1f5f9;
-            margin-bottom: 15px;
-            display: flex;
-            align-items: center;
-            gap: 8px;
-        }
-
-        .metric {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            padding: 12px 0;
-            border-bottom: 1px solid #334155;
-        }
-
-        .metric:last-child {
-            border-bottom: none;
-        }
-
-        .metric-label {
-            color: #94a3b8;
-            font-size: 14px;
-        }
-
-        .metric-value {
-            font-size: 18px;
-            font-weight: 600;
-            color: #f1f5f9;
-        }
-
-        .metric-value.large {
-            font-size: 32px;
-        }
-
-        .metric-value.success {
-            color: #10b981;
-        }
-
-        .metric-value.warning {
-            color: #f59e0b;
-        }
-
-        .metric-value.error {
-            color: #ef4444;
-        }
-
-        .progress-bar {
-            width: 100%;
-            height: 8px;
-            background: #334155;
-            border-radius: 4px;
-            overflow: hidden;
-            margin-top: 8px;
-        }
-
-        .progress-fill {
-            height: 100%;
-            background: linear-gradient(90deg, #3b82f6, #8b5cf6);
-            transition: width 0.3s ease;
-        }
-
-        .progress-fill.success {
-            background: linear-gradient(90deg, #10b981, #059669);
-        }
-
-        .progress-fill.warning {
-            background: linear-gradient(90deg, #f59e0b, #d97706);
-        }
-
-        .progress-fill.error {
-            background: linear-gradient(90deg, #ef4444, #dc2626);
-        }
-
-        .component-list {
+        .status-info {
             display: flex;
             flex-direction: column;
-            gap: 10px;
         }
 
-        .component {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            padding: 10px;
-            background: #0f172a;
-            border-radius: 6px;
-            border-left: 3px solid #334155;
-        }
-
-        .component.healthy {
-            border-left-color: #10b981;
-        }
-
-        .component.degraded {
-            border-left-color: #f59e0b;
-        }
-
-        .component.unhealthy {
-            border-left-color: #ef4444;
-        }
-
-        .component-name {
-            font-size: 14px;
-            color: #e2e8f0;
-        }
-
-        .component-status {
-            font-size: 12px;
-            padding: 4px 8px;
-            border-radius: 4px;
-            text-transform: uppercase;
+        .status-text {
             font-weight: 600;
+            font-size: 0.875rem;
+            color: var(--color-text-primary);
         }
 
-        .component-status.healthy {
-            background: rgba(16, 185, 129, 0.2);
-            color: #10b981;
-        }
-
-        .component-status.degraded {
-            background: rgba(245, 158, 11, 0.2);
-            color: #f59e0b;
-        }
-
-        .component-status.unhealthy {
-            background: rgba(239, 68, 68, 0.2);
-            color: #ef4444;
-        }
-
-        .alert-item {
-            padding: 10px;
-            background: #0f172a;
-            border-radius: 6px;
-            border-left: 3px solid #334155;
-            margin-bottom: 8px;
-        }
-
-        .alert-item.critical {
-            border-left-color: #ef4444;
-        }
-
-        .alert-item.error {
-            border-left-color: #f59e0b;
-        }
-
-        .alert-item.warning {
-            border-left-color: #f59e0b;
-        }
-
-        .alert-item.info {
-            border-left-color: #3b82f6;
-        }
-
-        .alert-time {
-            font-size: 11px;
-            color: #64748b;
-            margin-bottom: 4px;
-        }
-
-        .alert-message {
-            font-size: 13px;
-            color: #e2e8f0;
-        }
-
-        .stats-grid {
-            display: grid;
-            grid-template-columns: repeat(2, 1fr);
-            gap: 15px;
-        }
-
-        .stat-box {
-            text-align: center;
-            padding: 15px;
-            background: #0f172a;
-            border-radius: 8px;
-        }
-
-        .stat-box .value {
-            font-size: 28px;
-            font-weight: 700;
-            color: #f1f5f9;
-            margin-bottom: 5px;
-        }
-
-        .stat-box .label {
-            font-size: 12px;
-            color: #94a3b8;
-            text-transform: uppercase;
-        }
-
-        .refresh-indicator {
-            display: inline-flex;
+        .status-time {
+            font-size: 0.75rem;
+            color: var(--color-text-muted);
+            display: flex;
             align-items: center;
-            gap: 8px;
-            color: #64748b;
-            font-size: 14px;
+            gap: var(--spacing-2);
         }
 
         .spinner {
-            width: 16px;
-            height: 16px;
-            border: 2px solid #334155;
-            border-top-color: #3b82f6;
+            width: 12px;
+            height: 12px;
+            border: 2px solid var(--color-border);
+            border-top-color: var(--color-accent);
             border-radius: 50%;
             animation: spin 1s linear infinite;
         }
@@ -303,203 +104,915 @@
             to { transform: rotate(360deg); }
         }
 
+        /* Stats Grid */
+        .stats-overview {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: var(--spacing-4);
+            margin-bottom: var(--spacing-6);
+        }
+
+        .stat-card {
+            background: var(--color-bg-secondary);
+            border-radius: var(--radius-lg);
+            padding: var(--spacing-5);
+            border: 1px solid var(--color-border);
+            position: relative;
+            overflow: hidden;
+        }
+
+        .stat-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 3px;
+            background: var(--color-accent);
+        }
+
+        .stat-card.success::before {
+            background: var(--color-success);
+        }
+
+        .stat-card.warning::before {
+            background: var(--color-warning);
+        }
+
+        .stat-card.error::before {
+            background: var(--color-error);
+        }
+
+        .stat-card .stat-icon {
+            width: 40px;
+            height: 40px;
+            border-radius: var(--radius-md);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-bottom: var(--spacing-3);
+            background: rgba(0, 102, 204, 0.1);
+            color: var(--color-accent);
+        }
+
+        .stat-card.success .stat-icon {
+            background: rgba(16, 185, 129, 0.1);
+            color: var(--color-success);
+        }
+
+        .stat-card.warning .stat-icon {
+            background: rgba(245, 158, 11, 0.1);
+            color: var(--color-warning);
+        }
+
+        .stat-card .stat-value {
+            font-size: 2rem;
+            font-weight: 700;
+            color: var(--color-text-primary);
+            margin-bottom: var(--spacing-1);
+        }
+
+        .stat-card .stat-label {
+            font-size: 0.875rem;
+            color: var(--color-text-muted);
+        }
+
+        .stat-card .stat-change {
+            font-size: 0.75rem;
+            margin-top: var(--spacing-2);
+            display: flex;
+            align-items: center;
+            gap: var(--spacing-1);
+        }
+
+        .stat-card .stat-change.up {
+            color: var(--color-success);
+        }
+
+        .stat-card .stat-change.down {
+            color: var(--color-error);
+        }
+
+        /* Dashboard Grid */
+        .dashboard-grid {
+            display: grid;
+            grid-template-columns: 2fr 1fr;
+            gap: var(--spacing-4);
+        }
+
+        .dashboard-grid .full-width {
+            grid-column: 1 / -1;
+        }
+
+        /* Card Styles */
+        .dashboard-card {
+            background: var(--color-bg-secondary);
+            border-radius: var(--radius-lg);
+            border: 1px solid var(--color-border);
+            overflow: hidden;
+        }
+
+        .card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: var(--spacing-4) var(--spacing-5);
+            border-bottom: 1px solid var(--color-border);
+        }
+
+        .card-header h2 {
+            font-size: 1rem;
+            font-weight: 600;
+            color: var(--color-text-primary);
+            display: flex;
+            align-items: center;
+            gap: var(--spacing-2);
+        }
+
+        .card-header .card-actions {
+            display: flex;
+            gap: var(--spacing-2);
+        }
+
+        .card-body {
+            padding: var(--spacing-5);
+        }
+
+        /* Chart Container */
+        .chart-container {
+            position: relative;
+            height: 250px;
+        }
+
+        /* Metrics List */
+        .metrics-list {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .metric-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: var(--spacing-3) 0;
+            border-bottom: 1px solid var(--color-border);
+        }
+
+        .metric-row:last-child {
+            border-bottom: none;
+        }
+
+        .metric-label {
+            color: var(--color-text-secondary);
+            font-size: 0.875rem;
+        }
+
+        .metric-value {
+            font-weight: 600;
+            color: var(--color-text-primary);
+        }
+
+        .metric-value.success { color: var(--color-success); }
+        .metric-value.warning { color: var(--color-warning); }
+        .metric-value.error { color: var(--color-error); }
+
+        /* Progress Bar */
+        .progress-container {
+            display: flex;
+            align-items: center;
+            gap: var(--spacing-3);
+        }
+
+        .progress-bar {
+            flex: 1;
+            height: 8px;
+            background: var(--color-bg-tertiary);
+            border-radius: var(--radius-full);
+            overflow: hidden;
+        }
+
+        .progress-fill {
+            height: 100%;
+            border-radius: var(--radius-full);
+            transition: width 0.3s ease;
+            background: linear-gradient(90deg, var(--color-accent), #8b5cf6);
+        }
+
+        .progress-fill.success {
+            background: linear-gradient(90deg, var(--color-success), #059669);
+        }
+
+        .progress-fill.warning {
+            background: linear-gradient(90deg, var(--color-warning), #d97706);
+        }
+
+        .progress-fill.error {
+            background: linear-gradient(90deg, var(--color-error), #dc2626);
+        }
+
+        .progress-text {
+            font-weight: 600;
+            min-width: 45px;
+            text-align: right;
+        }
+
+        /* Component Health List */
+        .component-list {
+            display: flex;
+            flex-direction: column;
+            gap: var(--spacing-2);
+        }
+
+        .component-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: var(--spacing-3);
+            background: var(--color-bg-primary);
+            border-radius: var(--radius-md);
+            border-left: 3px solid var(--color-border);
+        }
+
+        .component-item.healthy {
+            border-left-color: var(--color-success);
+        }
+
+        .component-item.degraded {
+            border-left-color: var(--color-warning);
+        }
+
+        .component-item.unhealthy {
+            border-left-color: var(--color-error);
+        }
+
+        .component-name {
+            font-size: 0.875rem;
+            color: var(--color-text-primary);
+        }
+
+        .component-status {
+            font-size: 0.75rem;
+            padding: var(--spacing-1) var(--spacing-2);
+            border-radius: var(--radius-sm);
+            font-weight: 600;
+            text-transform: uppercase;
+        }
+
+        .component-status.healthy {
+            background: rgba(16, 185, 129, 0.15);
+            color: var(--color-success);
+        }
+
+        .component-status.degraded {
+            background: rgba(245, 158, 11, 0.15);
+            color: var(--color-warning);
+        }
+
+        .component-status.unhealthy {
+            background: rgba(239, 68, 68, 0.15);
+            color: var(--color-error);
+        }
+
+        /* Alert Items */
+        .alert-list {
+            display: flex;
+            flex-direction: column;
+            gap: var(--spacing-2);
+            max-height: 300px;
+            overflow-y: auto;
+        }
+
+        .alert-item {
+            padding: var(--spacing-3);
+            background: var(--color-bg-primary);
+            border-radius: var(--radius-md);
+            border-left: 3px solid var(--color-border);
+        }
+
+        .alert-item.critical {
+            border-left-color: var(--color-error);
+            background: rgba(239, 68, 68, 0.05);
+        }
+
+        .alert-item.warning {
+            border-left-color: var(--color-warning);
+            background: rgba(245, 158, 11, 0.05);
+        }
+
+        .alert-item.info {
+            border-left-color: var(--color-accent);
+        }
+
+        .alert-time {
+            font-size: 0.75rem;
+            color: var(--color-text-muted);
+            margin-bottom: var(--spacing-1);
+        }
+
+        .alert-message {
+            font-size: 0.875rem;
+            color: var(--color-text-primary);
+        }
+
+        .alert-severity {
+            font-weight: 600;
+            text-transform: uppercase;
+            font-size: 0.75rem;
+        }
+
+        .alert-severity.critical { color: var(--color-error); }
+        .alert-severity.warning { color: var(--color-warning); }
+        .alert-severity.info { color: var(--color-accent); }
+
+        /* Database Stats */
+        .db-stats-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: var(--spacing-3);
+            margin-bottom: var(--spacing-4);
+        }
+
+        .db-stat-box {
+            text-align: center;
+            padding: var(--spacing-4);
+            background: var(--color-bg-primary);
+            border-radius: var(--radius-md);
+        }
+
+        .db-stat-box .value {
+            font-size: 1.75rem;
+            font-weight: 700;
+            color: var(--color-text-primary);
+        }
+
+        .db-stat-box .label {
+            font-size: 0.75rem;
+            color: var(--color-text-muted);
+            text-transform: uppercase;
+            margin-top: var(--spacing-1);
+        }
+
+        /* Error Message */
+        .error-banner {
+            background: rgba(239, 68, 68, 0.1);
+            border: 1px solid var(--color-error);
+            color: #fca5a5;
+            padding: var(--spacing-4);
+            border-radius: var(--radius-md);
+            margin-bottom: var(--spacing-4);
+            display: flex;
+            align-items: center;
+            gap: var(--spacing-3);
+        }
+
+        .error-banner svg {
+            flex-shrink: 0;
+        }
+
+        /* Empty State */
         .empty-state {
             text-align: center;
-            padding: 30px;
-            color: #64748b;
-            font-size: 14px;
+            padding: var(--spacing-6);
+            color: var(--color-text-muted);
         }
 
-        .chart-container {
-            margin-top: 15px;
+        .empty-state svg {
+            margin-bottom: var(--spacing-3);
+            opacity: 0.5;
         }
 
-        .error-message {
-            background: rgba(239, 68, 68, 0.1);
-            border: 1px solid #ef4444;
-            color: #fca5a5;
-            padding: 15px;
-            border-radius: 8px;
-            margin-bottom: 20px;
+        /* Responsive */
+        @media (max-width: 1200px) {
+            .stats-overview {
+                grid-template-columns: repeat(2, 1fr);
+            }
+
+            .dashboard-grid {
+                grid-template-columns: 1fr;
+            }
         }
 
-        .action-button {
-            padding: 10px 20px;
-            background: #ef4444;
+        @media (max-width: 768px) {
+            .stats-overview {
+                grid-template-columns: 1fr;
+            }
+
+            .dashboard-header {
+                flex-direction: column;
+                align-items: flex-start;
+                gap: var(--spacing-4);
+            }
+
+            .db-stats-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        /* Danger Button */
+        .btn-danger {
+            background: var(--color-error);
             color: white;
-            border: none;
-            border-radius: 6px;
-            cursor: pointer;
-            font-size: 14px;
-            font-weight: 500;
-            margin-top: 10px;
-            width: 100%;
         }
 
-        .action-button:hover {
+        .btn-danger:hover {
             background: #dc2626;
         }
 
-        .action-button:disabled {
-            background: #64748b;
+        .btn-danger:disabled {
+            background: var(--color-text-muted);
             cursor: not-allowed;
         }
     </style>
 </head>
 <body>
-    <div class="header">
-        <div>
-            <h1>
-                CCTV Viewer - Operational Dashboard
-                <a href="index.html" style="padding: 8px 20px; background: #3b82f6; color: white; border: none; border-radius: 6px; cursor: pointer; font-size: 14px; font-weight: 500; text-decoration: none; display: inline-flex; align-items: center; gap: 8px; margin-left: 15px;">
-                    ← Back to Main
-                </a>
-            </h1>
-            <div class="subtitle">Real-time system monitoring and health status</div>
+    <!-- Navigation -->
+    <nav class="nav">
+        <div class="nav-brand">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <rect x="2" y="3" width="20" height="14" rx="2"/>
+                <circle cx="12" cy="10" r="3"/>
+                <path d="M7 21h10M12 17v4"/>
+            </svg>
+            <span>Taiwan CCTV Viewer</span>
         </div>
-        <div class="status-indicator">
-            <div class="status-dot healthy" id="overall-status-dot"></div>
-            <div>
-                <div id="overall-status-text" style="font-weight: 600; font-size: 14px;">Initializing...</div>
-                <div class="refresh-indicator">
-                    <div class="spinner"></div>
-                    <span id="last-update">Loading...</span>
+        <div class="nav-links">
+            <a href="index.html" class="nav-link">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <rect x="3" y="3" width="7" height="7"/>
+                    <rect x="14" y="3" width="7" height="7"/>
+                    <rect x="3" y="14" width="7" height="7"/>
+                    <rect x="14" y="14" width="7" height="7"/>
+                </svg>
+                Grid View
+            </a>
+            <a href="map.html" class="nav-link">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <polygon points="1 6 1 22 8 18 16 22 23 18 23 2 16 6 8 2 1 6"/>
+                    <line x1="8" y1="2" x2="8" y2="18"/>
+                    <line x1="16" y1="6" x2="16" y2="22"/>
+                </svg>
+                Map View
+            </a>
+            <a href="monitoring.html" class="nav-link active">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M22 12h-4l-3 9L9 3l-3 9H2"/>
+                </svg>
+                Monitoring
+            </a>
+        </div>
+        <div id="connection-status" class="connection-status disconnected">
+            <span class="connection-dot"></span>
+            <span class="connection-text">Connecting...</span>
+        </div>
+    </nav>
+
+    <main class="container" style="max-width: 1600px;">
+        <!-- Dashboard Header -->
+        <div class="dashboard-header">
+            <div class="dashboard-title">
+                <div>
+                    <h1>Operational Dashboard</h1>
+                    <div class="dashboard-subtitle">Real-time system monitoring and health status</div>
+                </div>
+            </div>
+            <div class="status-badge">
+                <div class="status-dot healthy" id="overall-status-dot"></div>
+                <div class="status-info">
+                    <span class="status-text" id="overall-status-text">Initializing...</span>
+                    <span class="status-time">
+                        <div class="spinner"></div>
+                        <span id="last-update">Loading...</span>
+                    </span>
                 </div>
             </div>
         </div>
-    </div>
 
-    <div id="error-container"></div>
+        <!-- Error Banner -->
+        <div id="error-container"></div>
 
-    <div class="grid">
-        <!-- System Overview -->
-        <div class="card">
-            <h2>System Overview</h2>
-            <div class="metric">
-                <span class="metric-label">Uptime</span>
-                <span class="metric-value" id="uptime">--</span>
+        <!-- Stats Overview -->
+        <div class="stats-overview">
+            <div class="stat-card success">
+                <div class="stat-icon">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <rect x="2" y="3" width="20" height="14" rx="2"/>
+                        <circle cx="12" cy="10" r="2"/>
+                    </svg>
+                </div>
+                <div class="stat-value" id="online-feeds-stat">--</div>
+                <div class="stat-label">Online Feeds</div>
+                <div class="stat-change up" id="feeds-change">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/>
+                        <polyline points="17 6 23 6 23 12"/>
+                    </svg>
+                    <span id="availability-stat">--% availability</span>
+                </div>
             </div>
-            <div class="metric">
-                <span class="metric-label">CPU Usage</span>
-                <span class="metric-value" id="cpu-usage">--</span>
+            <div class="stat-card warning">
+                <div class="stat-icon">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <rect x="1" y="3" width="15" height="13" rx="2"/>
+                        <path d="M16 8h4a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2v-4"/>
+                    </svg>
+                </div>
+                <div class="stat-value" id="vehicles-stat">--</div>
+                <div class="stat-label">Vehicles Detected</div>
+                <div class="stat-change" id="vehicles-change">
+                    <span>In active feeds</span>
+                </div>
             </div>
-            <div class="metric">
-                <span class="metric-label">Memory Usage</span>
-                <span class="metric-value" id="memory-usage">--</span>
+            <div class="stat-card">
+                <div class="stat-icon">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>
+                    </svg>
+                </div>
+                <div class="stat-value" id="websocket-stat">--</div>
+                <div class="stat-label">Active Connections</div>
+                <div class="stat-change" id="websocket-change">
+                    <span>WebSocket clients</span>
+                </div>
             </div>
-            <div class="metric">
-                <span class="metric-label">Process Memory</span>
-                <span class="metric-value" id="process-memory">--</span>
+            <div class="stat-card">
+                <div class="stat-icon">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="12" cy="12" r="10"/>
+                        <polyline points="12 6 12 12 16 14"/>
+                    </svg>
+                </div>
+                <div class="stat-value" id="uptime-stat">--</div>
+                <div class="stat-label">Uptime</div>
+                <div class="stat-change" id="uptime-change">
+                    <span>Since last restart</span>
+                </div>
             </div>
         </div>
 
-        <!-- Feed Statistics -->
-        <div class="card">
-            <h2>Feed Statistics</h2>
-            <div class="metric">
-                <span class="metric-label">Total Feeds</span>
-                <span class="metric-value" id="total-feeds">--</span>
-            </div>
-            <div class="metric">
-                <span class="metric-label">Online Feeds</span>
-                <span class="metric-value success" id="online-feeds">--</span>
-            </div>
-            <div class="metric">
-                <span class="metric-label">Availability</span>
-                <div style="width: 120px;">
-                    <span class="metric-value" id="online-percentage">--</span>
-                    <div class="progress-bar">
-                        <div class="progress-fill success" id="availability-progress" style="width: 0%"></div>
+        <!-- Main Dashboard Grid -->
+        <div class="dashboard-grid">
+            <!-- Feed Availability Chart -->
+            <div class="dashboard-card">
+                <div class="card-header">
+                    <h2>
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <line x1="18" y1="20" x2="18" y2="10"/>
+                            <line x1="12" y1="20" x2="12" y2="4"/>
+                            <line x1="6" y1="20" x2="6" y2="14"/>
+                        </svg>
+                        Feed Performance
+                    </h2>
+                    <div class="card-actions">
+                        <button class="btn btn-ghost btn-sm" onclick="toggleChartType()">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M21.21 15.89A10 10 0 1 1 8 2.83"/>
+                                <path d="M22 12A10 10 0 0 0 12 2v10z"/>
+                            </svg>
+                        </button>
+                    </div>
+                </div>
+                <div class="card-body">
+                    <div class="chart-container">
+                        <canvas id="feedChart"></canvas>
                     </div>
                 </div>
             </div>
-            <div class="metric">
-                <span class="metric-label">Vehicles Detected</span>
-                <span class="metric-value warning" id="vehicles-detected">--</span>
-            </div>
-        </div>
 
-        <!-- Cache & Performance -->
-        <div class="card">
-            <h2>Performance</h2>
-            <div class="metric">
-                <span class="metric-label">Cache Size</span>
-                <span class="metric-value" id="cache-size">--</span>
-            </div>
-            <div class="metric">
-                <span class="metric-label">Cached Items</span>
-                <span class="metric-value" id="cache-items">--</span>
-            </div>
-            <div class="metric">
-                <span class="metric-label">Active WebSockets</span>
-                <span class="metric-value" id="active-websockets">--</span>
-            </div>
-            <div class="metric">
-                <span class="metric-label">Circuit Breaker</span>
-                <span class="metric-value success" id="circuit-breaker-state">--</span>
-            </div>
-        </div>
-
-        <!-- Component Health -->
-        <div class="card">
-            <h2>Component Health</h2>
-            <div class="component-list" id="component-list">
-                <div class="empty-state">Loading components...</div>
-            </div>
-        </div>
-
-        <!-- Database Stats -->
-        <div class="card">
-            <h2>Database</h2>
-            <div class="stats-grid">
-                <div class="stat-box">
-                    <div class="value" id="db-detections">--</div>
-                    <div class="label">Detections</div>
+            <!-- Component Health -->
+            <div class="dashboard-card">
+                <div class="card-header">
+                    <h2>
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M22 12h-4l-3 9L9 3l-3 9H2"/>
+                        </svg>
+                        Component Health
+                    </h2>
                 </div>
-                <div class="stat-box">
-                    <div class="value" id="db-tracks">--</div>
-                    <div class="label">Tracks</div>
+                <div class="card-body">
+                    <div class="component-list" id="component-list">
+                        <div class="empty-state">
+                            <div class="spinner" style="width: 24px; height: 24px; margin: 0 auto;"></div>
+                            <p style="margin-top: var(--spacing-2);">Loading components...</p>
+                        </div>
+                    </div>
                 </div>
             </div>
-            <div class="metric" style="margin-top: 15px;">
-                <span class="metric-label">Database Status</span>
-                <span class="metric-value success" id="db-status">--</span>
-            </div>
-            <button class="action-button" onclick="resetDatabase()" id="reset-db-btn">
-                Reset Database
-            </button>
-        </div>
 
-        <!-- Recent Alerts -->
-        <div class="card">
-            <h2>Recent Alerts</h2>
-            <div id="alerts-container">
-                <div class="empty-state">No recent alerts</div>
+            <!-- System Resources Chart -->
+            <div class="dashboard-card">
+                <div class="card-header">
+                    <h2>
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <rect x="4" y="4" width="16" height="16" rx="2"/>
+                            <rect x="9" y="9" width="6" height="6"/>
+                            <path d="M9 1v3M15 1v3M9 20v3M15 20v3M20 9h3M20 14h3M1 9h3M1 14h3"/>
+                        </svg>
+                        System Resources
+                    </h2>
+                </div>
+                <div class="card-body">
+                    <div class="chart-container">
+                        <canvas id="resourceChart"></canvas>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Performance Metrics -->
+            <div class="dashboard-card">
+                <div class="card-header">
+                    <h2>
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M12 20V10"/>
+                            <path d="M18 20V4"/>
+                            <path d="M6 20v-4"/>
+                        </svg>
+                        Performance
+                    </h2>
+                </div>
+                <div class="card-body">
+                    <div class="metrics-list">
+                        <div class="metric-row">
+                            <span class="metric-label">CPU Usage</span>
+                            <div class="progress-container" style="flex: 1; max-width: 200px; margin-left: var(--spacing-4);">
+                                <div class="progress-bar">
+                                    <div class="progress-fill" id="cpu-progress" style="width: 0%"></div>
+                                </div>
+                                <span class="progress-text metric-value" id="cpu-usage">--%</span>
+                            </div>
+                        </div>
+                        <div class="metric-row">
+                            <span class="metric-label">Memory Usage</span>
+                            <div class="progress-container" style="flex: 1; max-width: 200px; margin-left: var(--spacing-4);">
+                                <div class="progress-bar">
+                                    <div class="progress-fill" id="memory-progress" style="width: 0%"></div>
+                                </div>
+                                <span class="progress-text metric-value" id="memory-usage">--%</span>
+                            </div>
+                        </div>
+                        <div class="metric-row">
+                            <span class="metric-label">Process Memory</span>
+                            <span class="metric-value" id="process-memory">-- MB</span>
+                        </div>
+                        <div class="metric-row">
+                            <span class="metric-label">Cache Size</span>
+                            <span class="metric-value" id="cache-size">-- MB</span>
+                        </div>
+                        <div class="metric-row">
+                            <span class="metric-label">Cached Items</span>
+                            <span class="metric-value" id="cache-items">--</span>
+                        </div>
+                        <div class="metric-row">
+                            <span class="metric-label">Circuit Breaker</span>
+                            <span class="metric-value success" id="circuit-breaker">CLOSED</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Database Stats -->
+            <div class="dashboard-card">
+                <div class="card-header">
+                    <h2>
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <ellipse cx="12" cy="5" rx="9" ry="3"/>
+                            <path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/>
+                            <path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/>
+                        </svg>
+                        Database
+                    </h2>
+                </div>
+                <div class="card-body">
+                    <div class="db-stats-grid">
+                        <div class="db-stat-box">
+                            <div class="value" id="db-detections">--</div>
+                            <div class="label">Detections</div>
+                        </div>
+                        <div class="db-stat-box">
+                            <div class="value" id="db-tracks">--</div>
+                            <div class="label">Tracks</div>
+                        </div>
+                    </div>
+                    <div class="metrics-list">
+                        <div class="metric-row">
+                            <span class="metric-label">Status</span>
+                            <span class="metric-value success" id="db-status">Connected</span>
+                        </div>
+                    </div>
+                    <button class="btn btn-danger" style="width: 100%; margin-top: var(--spacing-4);" onclick="resetDatabase()" id="reset-db-btn">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <polyline points="1 4 1 10 7 10"/>
+                            <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/>
+                        </svg>
+                        Reset Database
+                    </button>
+                </div>
+            </div>
+
+            <!-- Recent Alerts -->
+            <div class="dashboard-card">
+                <div class="card-header">
+                    <h2>
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/>
+                            <path d="M13.73 21a2 2 0 0 1-3.46 0"/>
+                        </svg>
+                        Recent Alerts
+                    </h2>
+                    <span class="badge" id="alert-count">0</span>
+                </div>
+                <div class="card-body">
+                    <div class="alert-list" id="alerts-container">
+                        <div class="empty-state">
+                            <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1">
+                                <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/>
+                                <path d="M13.73 21a2 2 0 0 1-3.46 0"/>
+                            </svg>
+                            <p>No recent alerts</p>
+                        </div>
+                    </div>
+                </div>
             </div>
         </div>
-    </div>
+    </main>
 
+    <script src="scripts/utils.js"></script>
     <script>
         const API_BASE = 'http://localhost:8001';
         let updateInterval;
+        let feedChart = null;
+        let resourceChart = null;
+        let chartType = 'bar';
+
+        // Historical data for charts
+        const historyLength = 20;
+        const cpuHistory = [];
+        const memoryHistory = [];
+        const feedHistory = { online: [], offline: [], timestamps: [] };
+
+        // Initialize
+        document.addEventListener('DOMContentLoaded', () => {
+            ConnectionStatus.init('connection-status');
+            initCharts();
+            updateDashboard();
+            updateInterval = setInterval(updateDashboard, 5000);
+        });
+
+        // Cleanup
+        window.addEventListener('beforeunload', () => {
+            if (updateInterval) clearInterval(updateInterval);
+        });
+
+        function initCharts() {
+            // Feed Performance Chart
+            const feedCtx = document.getElementById('feedChart').getContext('2d');
+            feedChart = new Chart(feedCtx, {
+                type: 'bar',
+                data: {
+                    labels: [],
+                    datasets: [
+                        {
+                            label: 'Online',
+                            data: [],
+                            backgroundColor: 'rgba(16, 185, 129, 0.8)',
+                            borderColor: '#10b981',
+                            borderWidth: 1
+                        },
+                        {
+                            label: 'Offline',
+                            data: [],
+                            backgroundColor: 'rgba(239, 68, 68, 0.8)',
+                            borderColor: '#ef4444',
+                            borderWidth: 1
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            position: 'top',
+                            labels: { color: '#94a3b8', font: { size: 11 } }
+                        }
+                    },
+                    scales: {
+                        x: {
+                            stacked: true,
+                            grid: { color: 'rgba(148, 163, 184, 0.1)' },
+                            ticks: { color: '#94a3b8', font: { size: 10 } }
+                        },
+                        y: {
+                            stacked: true,
+                            beginAtZero: true,
+                            grid: { color: 'rgba(148, 163, 184, 0.1)' },
+                            ticks: { color: '#94a3b8', font: { size: 10 } }
+                        }
+                    }
+                }
+            });
+
+            // Resource Usage Chart
+            const resourceCtx = document.getElementById('resourceChart').getContext('2d');
+            resourceChart = new Chart(resourceCtx, {
+                type: 'line',
+                data: {
+                    labels: [],
+                    datasets: [
+                        {
+                            label: 'CPU %',
+                            data: [],
+                            borderColor: '#0066cc',
+                            backgroundColor: 'rgba(0, 102, 204, 0.1)',
+                            fill: true,
+                            tension: 0.4
+                        },
+                        {
+                            label: 'Memory %',
+                            data: [],
+                            borderColor: '#8b5cf6',
+                            backgroundColor: 'rgba(139, 92, 246, 0.1)',
+                            fill: true,
+                            tension: 0.4
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            position: 'top',
+                            labels: { color: '#94a3b8', font: { size: 11 } }
+                        }
+                    },
+                    scales: {
+                        x: {
+                            grid: { color: 'rgba(148, 163, 184, 0.1)' },
+                            ticks: { color: '#94a3b8', font: { size: 10 }, maxRotation: 0 }
+                        },
+                        y: {
+                            beginAtZero: true,
+                            max: 100,
+                            grid: { color: 'rgba(148, 163, 184, 0.1)' },
+                            ticks: {
+                                color: '#94a3b8',
+                                font: { size: 10 },
+                                callback: value => value + '%'
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
+        function toggleChartType() {
+            chartType = chartType === 'bar' ? 'line' : 'bar';
+            feedChart.config.type = chartType;
+            feedChart.update();
+        }
 
         async function fetchHealthData() {
-            try {
-                const response = await fetch(`${API_BASE}/health`);
-                return await response.json();
-            } catch (error) {
-                console.error('Error fetching health data:', error);
-                throw error;
-            }
+            const response = await fetch(`${API_BASE}/health`);
+            return await response.json();
         }
 
         async function fetchOperationalStatus() {
+            const response = await fetch(`${API_BASE}/api/operational/status`);
+            return await response.json();
+        }
+
+        async function updateDashboard() {
             try {
-                const response = await fetch(`${API_BASE}/api/operational/status`);
-                return await response.json();
+                ConnectionStatus.setStatus('connecting');
+
+                const [health, status] = await Promise.all([
+                    fetchHealthData(),
+                    fetchOperationalStatus()
+                ]);
+
+                ConnectionStatus.setStatus('connected');
+                ConnectionStatus.updateLastSeen();
+                clearError();
+
+                updateOverallStatus(health.status);
+                updateStatsOverview(health, status);
+                updateSystemMetrics(health);
+                updateComponents(health.components);
+                updatePerformanceMetrics(status);
+                updateDatabaseStats(status);
+                updateCharts(health, status);
+
+                if (status.alerts?.recent) {
+                    updateAlerts(status.alerts.recent);
+                }
+
+                const now = new Date();
+                document.getElementById('last-update').textContent = `Updated ${now.toLocaleTimeString()}`;
+
             } catch (error) {
-                console.error('Error fetching operational status:', error);
-                throw error;
+                console.error('Dashboard update error:', error);
+                ConnectionStatus.setStatus('disconnected');
+                showError('Unable to connect to API server. Make sure the backend is running.');
             }
         }
 
@@ -511,13 +1024,67 @@
             text.textContent = status.charAt(0).toUpperCase() + status.slice(1);
         }
 
+        function updateStatsOverview(health, status) {
+            if (status.feeds) {
+                document.getElementById('online-feeds-stat').textContent =
+                    status.feeds.online.toLocaleString();
+                document.getElementById('availability-stat').textContent =
+                    `${status.feeds.online_percentage}% availability`;
+                document.getElementById('vehicles-stat').textContent =
+                    status.feeds.with_vehicles.toLocaleString();
+            }
+
+            if (status.websocket) {
+                document.getElementById('websocket-stat').textContent =
+                    status.websocket.active_connections.toLocaleString();
+            }
+
+            document.getElementById('uptime-stat').textContent = status.uptime_human || '--';
+        }
+
         function updateSystemMetrics(health) {
             if (health.system) {
-                document.getElementById('cpu-usage').textContent = `${health.system.cpu_percent}%`;
-                document.getElementById('memory-usage').textContent =
-                    `${health.system.memory.used_gb} GB (${health.system.memory.percent}%)`;
+                const cpuPercent = health.system.cpu_percent;
+                const memoryPercent = health.system.memory.percent;
+
+                document.getElementById('cpu-usage').textContent = `${cpuPercent}%`;
+                document.getElementById('cpu-progress').style.width = `${cpuPercent}%`;
+                updateProgressColor('cpu-progress', cpuPercent);
+
+                document.getElementById('memory-usage').textContent = `${memoryPercent}%`;
+                document.getElementById('memory-progress').style.width = `${memoryPercent}%`;
+                updateProgressColor('memory-progress', memoryPercent);
+
                 document.getElementById('process-memory').textContent =
                     `${health.system.python_process.memory_mb} MB`;
+
+                // Update history for charts
+                const timestamp = new Date().toLocaleTimeString('en-US', {
+                    hour12: false,
+                    hour: '2-digit',
+                    minute: '2-digit'
+                });
+
+                cpuHistory.push(cpuPercent);
+                memoryHistory.push(memoryPercent);
+
+                if (cpuHistory.length > historyLength) {
+                    cpuHistory.shift();
+                    memoryHistory.shift();
+                }
+            }
+        }
+
+        function updateProgressColor(elementId, percent) {
+            const element = document.getElementById(elementId);
+            element.classList.remove('success', 'warning', 'error');
+
+            if (percent < 60) {
+                element.classList.add('success');
+            } else if (percent < 80) {
+                element.classList.add('warning');
+            } else {
+                element.classList.add('error');
             }
         }
 
@@ -525,20 +1092,15 @@
             const container = document.getElementById('component-list');
 
             if (!components || components.length === 0) {
-                container.innerHTML = '<div class="empty-state">No components found</div>';
+                container.innerHTML = `
+                    <div class="empty-state">
+                        <p>No components found</p>
+                    </div>
+                `;
                 return;
             }
 
-            container.innerHTML = components.map(comp => `
-                <div class="component ${comp.status}">
-                    <span class="component-name">${formatComponentName(comp.component)}</span>
-                    <span class="component-status ${comp.status}">${comp.status}</span>
-                </div>
-            `).join('');
-        }
-
-        function formatComponentName(name) {
-            const names = {
+            const componentNames = {
                 'database': 'Database',
                 'yolo_model': 'YOLO Model',
                 'http_client': 'HTTP Client',
@@ -547,51 +1109,27 @@
                 'tracker': 'Tracker',
                 'feed_source': 'Feed Source'
             };
-            return names[name] || name;
-        }
 
-        function updateFeedStats(status) {
-            if (status.feeds) {
-                document.getElementById('total-feeds').textContent = status.feeds.total.toLocaleString();
-                document.getElementById('online-feeds').textContent = status.feeds.online.toLocaleString();
-                document.getElementById('online-percentage').textContent = `${status.feeds.online_percentage}%`;
-                document.getElementById('vehicles-detected').textContent = status.feeds.with_vehicles.toLocaleString();
-
-                // Update progress bar
-                const progressBar = document.getElementById('availability-progress');
-                const percentage = status.feeds.online_percentage;
-                progressBar.style.width = `${percentage}%`;
-
-                // Change color based on availability
-                progressBar.className = 'progress-fill';
-                if (percentage >= 80) {
-                    progressBar.classList.add('success');
-                } else if (percentage >= 50) {
-                    progressBar.classList.add('warning');
-                } else {
-                    progressBar.classList.add('error');
-                }
-            }
+            container.innerHTML = components.map(comp => `
+                <div class="component-item ${comp.status}">
+                    <span class="component-name">${componentNames[comp.component] || comp.component}</span>
+                    <span class="component-status ${comp.status}">${comp.status}</span>
+                </div>
+            `).join('');
         }
 
         function updatePerformanceMetrics(status) {
-            document.getElementById('uptime').textContent = status.uptime_human || '--';
-
             if (status.cache) {
                 document.getElementById('cache-size').textContent = `${status.cache.size_mb} MB`;
                 document.getElementById('cache-items').textContent = status.cache.items.toLocaleString();
             }
 
-            if (status.websocket) {
-                document.getElementById('active-websockets').textContent =
-                    status.websocket.active_connections.toLocaleString();
-            }
-
-            if (status.circuit_breakers && status.circuit_breakers.feed_fetcher) {
+            if (status.circuit_breakers?.feed_fetcher) {
                 const state = status.circuit_breakers.feed_fetcher.state;
-                const element = document.getElementById('circuit-breaker-state');
+                const element = document.getElementById('circuit-breaker');
                 element.textContent = state.toUpperCase();
                 element.className = 'metric-value';
+
                 if (state === 'closed') element.classList.add('success');
                 else if (state === 'half_open') element.classList.add('warning');
                 else element.classList.add('error');
@@ -605,27 +1143,78 @@
                 document.getElementById('db-tracks').textContent =
                     status.database.tracks_count?.toLocaleString() || '--';
                 document.getElementById('db-status').textContent = 'Connected';
+                document.getElementById('db-status').className = 'metric-value success';
             } else {
                 document.getElementById('db-status').textContent = 'Error';
                 document.getElementById('db-status').className = 'metric-value error';
             }
         }
 
+        function updateCharts(health, status) {
+            const timestamp = new Date().toLocaleTimeString('en-US', {
+                hour12: false,
+                hour: '2-digit',
+                minute: '2-digit',
+                second: '2-digit'
+            });
+
+            // Update feed history
+            if (status.feeds) {
+                feedHistory.online.push(status.feeds.online);
+                feedHistory.offline.push(status.feeds.total - status.feeds.online);
+                feedHistory.timestamps.push(timestamp);
+
+                if (feedHistory.timestamps.length > historyLength) {
+                    feedHistory.online.shift();
+                    feedHistory.offline.shift();
+                    feedHistory.timestamps.shift();
+                }
+
+                feedChart.data.labels = feedHistory.timestamps;
+                feedChart.data.datasets[0].data = feedHistory.online;
+                feedChart.data.datasets[1].data = feedHistory.offline;
+                feedChart.update('none');
+            }
+
+            // Update resource chart
+            const labels = Array.from({ length: cpuHistory.length }, (_, i) => {
+                const secondsAgo = (cpuHistory.length - 1 - i) * 5;
+                return secondsAgo === 0 ? 'now' : `-${secondsAgo}s`;
+            });
+
+            resourceChart.data.labels = labels;
+            resourceChart.data.datasets[0].data = cpuHistory;
+            resourceChart.data.datasets[1].data = memoryHistory;
+            resourceChart.update('none');
+        }
+
         function updateAlerts(alerts) {
             const container = document.getElementById('alerts-container');
+            const countBadge = document.getElementById('alert-count');
+
+            countBadge.textContent = alerts.length;
 
             if (!alerts || alerts.length === 0) {
-                container.innerHTML = '<div class="empty-state">No recent alerts</div>';
+                container.innerHTML = `
+                    <div class="empty-state">
+                        <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1">
+                            <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/>
+                            <path d="M13.73 21a2 2 0 0 1-3.46 0"/>
+                        </svg>
+                        <p>No recent alerts</p>
+                    </div>
+                `;
                 return;
             }
 
-            container.innerHTML = alerts.slice(0, 5).map(alert => {
-                const time = new Date(alert.timestamp).toLocaleString();
+            container.innerHTML = alerts.slice(0, 10).map(alert => {
+                const time = Format.timeAgo(alert.timestamp);
                 return `
                     <div class="alert-item ${alert.severity}">
                         <div class="alert-time">${time}</div>
                         <div class="alert-message">
-                            <strong>[${alert.severity.toUpperCase()}]</strong> ${alert.message}
+                            <span class="alert-severity ${alert.severity}">[${alert.severity}]</span>
+                            ${alert.message}
                         </div>
                     </div>
                 `;
@@ -633,49 +1222,23 @@
         }
 
         function showError(message) {
-            const container = document.getElementById('error-container');
-            container.innerHTML = `
-                <div class="error-message">
-                    <strong>Connection Error:</strong> ${message}
-                    <br>Retrying in 5 seconds...
+            document.getElementById('error-container').innerHTML = `
+                <div class="error-banner">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="12" cy="12" r="10"/>
+                        <line x1="12" y1="8" x2="12" y2="12"/>
+                        <line x1="12" y1="16" x2="12.01" y2="16"/>
+                    </svg>
+                    <div>
+                        <strong>Connection Error:</strong> ${message}
+                        <br><small>Retrying in 5 seconds...</small>
+                    </div>
                 </div>
             `;
         }
 
         function clearError() {
             document.getElementById('error-container').innerHTML = '';
-        }
-
-        async function updateDashboard() {
-            try {
-                const [health, status] = await Promise.all([
-                    fetchHealthData(),
-                    fetchOperationalStatus()
-                ]);
-
-                clearError();
-
-                // Update all sections
-                updateOverallStatus(health.status);
-                updateSystemMetrics(health);
-                updateComponents(health.components);
-                updateFeedStats(status);
-                updatePerformanceMetrics(status);
-                updateDatabaseStats(status);
-
-                if (status.alerts && status.alerts.recent) {
-                    updateAlerts(status.alerts.recent);
-                }
-
-                // Update last refresh time
-                const now = new Date();
-                document.getElementById('last-update').textContent =
-                    `Updated ${now.toLocaleTimeString()}`;
-
-            } catch (error) {
-                console.error('Dashboard update error:', error);
-                showError('Unable to connect to API server. Make sure the backend is running.');
-            }
         }
 
         async function resetDatabase() {
@@ -685,42 +1248,45 @@
 
             const button = document.getElementById('reset-db-btn');
             button.disabled = true;
-            button.textContent = 'Resetting...';
+            button.innerHTML = `
+                <div class="spinner" style="width: 16px; height: 16px;"></div>
+                Resetting...
+            `;
 
             try {
                 const response = await fetch(`${API_BASE}/api/database/reset`, {
                     method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    }
+                    headers: { 'Content-Type': 'application/json' }
                 });
 
                 const result = await response.json();
 
                 if (response.ok) {
-                    alert('Database reset successfully!\n\nAll detections and vehicle tracks have been cleared.');
-                    updateDashboard(); // Refresh dashboard
+                    Toast.success('Database reset successfully! All detections and vehicle tracks have been cleared.');
+                    updateDashboard();
                 } else {
-                    alert(`Database reset failed: ${result.detail || 'Unknown error'}`);
+                    Toast.error(`Database reset failed: ${result.detail || 'Unknown error'}`);
                 }
             } catch (error) {
-                alert(`Database reset error: ${error.message}`);
+                Toast.error(`Database reset error: ${error.message}`);
             } finally {
                 button.disabled = false;
-                button.textContent = 'Reset Database';
+                button.innerHTML = `
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <polyline points="1 4 1 10 7 10"/>
+                        <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/>
+                    </svg>
+                    Reset Database
+                `;
             }
         }
 
-        // Initialize dashboard
-        document.addEventListener('DOMContentLoaded', () => {
-            updateDashboard();
-            updateInterval = setInterval(updateDashboard, 5000); // Update every 5 seconds
-        });
-
-        // Cleanup on page unload
-        window.addEventListener('beforeunload', () => {
-            if (updateInterval) {
-                clearInterval(updateInterval);
+        // Keyboard shortcuts
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'r' && !e.ctrlKey && !e.metaKey) {
+                e.preventDefault();
+                updateDashboard();
+                Toast.info('Dashboard refreshed');
             }
         });
     </script>

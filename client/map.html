@@ -7,20 +7,13 @@
 
     <!-- Leaflet CSS -->
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-
-    <!-- Leaflet MarkerCluster CSS -->
     <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css" />
     <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css" />
+    <link rel="stylesheet" href="styles/common.css">
 
     <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
-
         body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            overflow: hidden;
         }
 
         #map {
@@ -28,260 +21,365 @@
             height: 100vh;
         }
 
-        .header {
+        /* Floating Header */
+        .map-header {
             position: absolute;
-            top: 10px;
-            left: 50px;
-            right: 10px;
+            top: var(--spacing-md);
+            left: 60px;
+            right: var(--spacing-md);
             z-index: 1000;
-            background: #2d2d2d;
-            padding: 15px 20px;
-            border-radius: 8px;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.5);
+            background: var(--color-bg-secondary);
+            padding: var(--spacing-md) var(--spacing-lg);
+            border-radius: var(--radius-lg);
+            box-shadow: var(--shadow-lg);
             display: flex;
             justify-content: space-between;
             align-items: center;
+            gap: var(--spacing-lg);
+            flex-wrap: wrap;
         }
 
-        .header h1 {
-            font-size: 20px;
-            margin: 0;
-            color: #ffffff;
-        }
-
-        .stats {
+        .map-header-left {
             display: flex;
-            gap: 20px;
-            font-size: 14px;
-        }
-
-        .stat {
-            display: flex;
-            flex-direction: column;
             align-items: center;
+            gap: var(--spacing-lg);
         }
 
-        .stat-value {
+        .map-header h1 {
+            font-size: 18px;
+            white-space: nowrap;
+        }
+
+        .map-stats {
+            display: flex;
+            gap: var(--spacing-xl);
+        }
+
+        .map-stat {
+            text-align: center;
+        }
+
+        .map-stat-value {
             font-size: 24px;
-            font-weight: bold;
-            color: #0066cc;
+            font-weight: 700;
+            color: var(--color-accent);
         }
 
-        .stat-label {
-            color: #888;
-            font-size: 12px;
+        .map-stat-label {
+            font-size: 11px;
+            color: var(--color-text-secondary);
+            text-transform: uppercase;
         }
 
-        .filters {
+        /* Floating Filter Panel */
+        .map-filters {
             position: absolute;
             top: 90px;
-            left: 50px;
+            left: 60px;
             z-index: 1000;
-            background: #2d2d2d;
-            padding: 15px;
-            border-radius: 8px;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.5);
-            min-width: 250px;
+            background: var(--color-bg-secondary);
+            padding: var(--spacing-lg);
+            border-radius: var(--radius-lg);
+            box-shadow: var(--shadow-lg);
+            min-width: 280px;
         }
 
         .filter-group {
-            margin-bottom: 10px;
+            margin-bottom: var(--spacing-md);
         }
 
         .filter-group label {
             display: block;
             font-size: 12px;
-            color: #ccc;
-            margin-bottom: 5px;
+            color: var(--color-text-secondary);
+            margin-bottom: var(--spacing-xs);
         }
 
         .filter-group input,
         .filter-group select {
             width: 100%;
-            padding: 8px;
-            border: 2px solid #444;
-            border-radius: 4px;
+            padding: var(--spacing-sm) var(--spacing-md);
+            border: 2px solid var(--color-border);
+            border-radius: var(--radius-md);
             font-size: 14px;
-            background: #1a1a1a;
-            color: white;
+            background: var(--color-bg-input);
+            color: var(--color-text-primary);
+            transition: border-color var(--transition-normal);
         }
 
         .filter-group input:focus,
         .filter-group select:focus {
             outline: none;
-            border-color: #0066cc;
+            border-color: var(--color-accent);
         }
 
-        .filter-buttons {
+        .filter-actions {
             display: flex;
-            gap: 10px;
-            margin-top: 15px;
+            gap: var(--spacing-sm);
+            margin-top: var(--spacing-lg);
         }
 
-        .btn {
+        .filter-actions .btn {
             flex: 1;
-            padding: 8px;
-            border: none;
-            border-radius: 4px;
-            font-size: 14px;
-            cursor: pointer;
-            font-weight: 500;
         }
 
-        .btn-primary {
-            background: #0066cc;
-            color: white;
+        /* Legend */
+        .map-legend {
+            position: absolute;
+            bottom: var(--spacing-xl);
+            left: 60px;
+            z-index: 1000;
+            background: var(--color-bg-secondary);
+            padding: var(--spacing-md);
+            border-radius: var(--radius-lg);
+            box-shadow: var(--shadow-lg);
         }
 
-        .btn-primary:hover {
-            background: #0052a3;
+        .legend-title {
+            font-size: 12px;
+            font-weight: 600;
+            color: var(--color-text-secondary);
+            margin-bottom: var(--spacing-sm);
+            text-transform: uppercase;
         }
 
-        .btn-secondary {
-            background: #444;
-            color: #fff;
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: var(--spacing-sm);
+            font-size: 12px;
+            color: var(--color-text-primary);
+            margin-bottom: var(--spacing-xs);
         }
 
-        .btn-secondary:hover {
-            background: #555;
+        .legend-dot {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            border: 2px solid white;
+            box-shadow: var(--shadow-sm);
         }
 
-        .btn:hover {
-            opacity: 1;
+        .legend-dot.online { background: var(--color-success); }
+        .legend-dot.vehicles { background: var(--color-error); }
+        .legend-dot.offline { background: #9ca3af; }
+
+        /* Connection Status */
+        .map-connection {
+            position: absolute;
+            bottom: var(--spacing-xl);
+            right: var(--spacing-xl);
+            z-index: 1000;
         }
 
         /* Custom marker styles */
         .marker-icon {
-            width: 30px;
-            height: 30px;
+            width: 28px;
+            height: 28px;
             border-radius: 50%;
             display: flex;
             align-items: center;
             justify-content: center;
-            font-size: 16px;
+            font-size: 14px;
             border: 3px solid white;
-            box-shadow: 0 2px 5px rgba(0,0,0,0.3);
+            box-shadow: var(--shadow-md);
+            transition: transform var(--transition-fast);
+        }
+
+        .marker-icon:hover {
+            transform: scale(1.1);
         }
 
         .marker-working {
-            background: #10b981;
+            background: var(--color-success);
         }
 
         .marker-working-vehicles {
-            background: #ef4444;
+            background: var(--color-error);
+            animation: pulse-marker 2s infinite;
         }
 
         .marker-offline {
             background: #9ca3af;
         }
 
+        @keyframes pulse-marker {
+            0%, 100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.4); }
+            50% { box-shadow: 0 0 0 8px rgba(239, 68, 68, 0); }
+        }
+
         /* Popup styles */
+        .leaflet-popup-content-wrapper {
+            background: var(--color-bg-secondary);
+            border-radius: var(--radius-lg);
+            box-shadow: var(--shadow-lg);
+        }
+
         .leaflet-popup-content {
-            margin: 10px;
-            min-width: 250px;
+            margin: var(--spacing-md);
+            min-width: 260px;
+            color: var(--color-text-primary);
+        }
+
+        .leaflet-popup-tip {
+            background: var(--color-bg-secondary);
         }
 
         .popup-title {
-            font-weight: bold;
-            font-size: 14px;
-            margin-bottom: 8px;
-            color: #1f2937;
+            font-weight: 600;
+            font-size: 15px;
+            margin-bottom: var(--spacing-sm);
+            color: var(--color-text-primary);
         }
 
         .popup-info {
             font-size: 12px;
-            color: #6b7280;
-            margin-bottom: 5px;
+            color: var(--color-text-secondary);
+            margin-bottom: var(--spacing-xs);
         }
 
         .popup-status {
             display: inline-block;
-            padding: 2px 8px;
-            border-radius: 12px;
+            padding: var(--spacing-xs) var(--spacing-sm);
+            border-radius: var(--radius-full);
             font-size: 11px;
-            font-weight: 500;
-            margin-top: 5px;
+            font-weight: 600;
+            margin-top: var(--spacing-sm);
         }
 
-        .status-working {
-            background: #d1fae5;
-            color: #065f46;
+        .popup-status.online {
+            background: var(--color-success-bg);
+            color: var(--color-success);
         }
 
-        .status-vehicles {
-            background: #fee2e2;
-            color: #991b1b;
+        .popup-status.vehicles {
+            background: var(--color-error-bg);
+            color: var(--color-error);
         }
 
-        .status-offline {
-            background: #e5e7eb;
-            color: #374151;
+        .popup-status.offline {
+            background: rgba(156, 163, 175, 0.2);
+            color: #9ca3af;
         }
 
         .popup-image {
             width: 100%;
-            margin-top: 10px;
-            border-radius: 4px;
+            margin-top: var(--spacing-md);
+            border-radius: var(--radius-md);
+            background: var(--color-bg-primary);
         }
 
-        .popup-buttons {
+        .popup-actions {
             display: flex;
-            gap: 5px;
-            margin-top: 10px;
+            gap: var(--spacing-sm);
+            margin-top: var(--spacing-md);
         }
 
-        .popup-btn {
+        .popup-actions .btn {
             flex: 1;
-            padding: 6px;
-            border: none;
-            border-radius: 4px;
-            font-size: 11px;
-            cursor: pointer;
-            background: #2563eb;
-            color: white;
+            padding: var(--spacing-sm);
+            font-size: 12px;
+        }
+
+        /* Responsive */
+        @media (max-width: 768px) {
+            .map-header {
+                left: var(--spacing-md);
+                flex-direction: column;
+                align-items: stretch;
+            }
+
+            .map-header-left {
+                flex-direction: column;
+                align-items: flex-start;
+            }
+
+            .map-stats {
+                width: 100%;
+                justify-content: space-around;
+            }
+
+            .map-filters {
+                left: var(--spacing-md);
+                right: var(--spacing-md);
+                top: auto;
+                bottom: var(--spacing-xl);
+                min-width: auto;
+            }
+
+            .map-legend {
+                display: none;
+            }
         }
     </style>
 </head>
 <body>
-    <div class="header">
-        <h1>
-            Taiwan Highway CCTV Map
-            <a href="index.html" style="padding: 8px 20px; background: #3b82f6; color: white; border: none; border-radius: 6px; cursor: pointer; font-size: 14px; font-weight: 500; text-decoration: none; display: inline-flex; align-items: center; gap: 8px; margin-left: 15px;">
-                ← Back to Main
+    <div class="map-header">
+        <div class="map-header-left">
+            <h1>Taiwan Highway CCTV Map</h1>
+            <a href="index.html" class="btn">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>
+                    <polyline points="9 22 9 12 15 12 15 22"/>
+                </svg>
+                Grid View
             </a>
-        </h1>
-        <div class="stats">
-            <div class="stat">
-                <div class="stat-value" id="totalFeeds">0</div>
-                <div class="stat-label">Total Feeds</div>
+        </div>
+        <div class="map-stats">
+            <div class="map-stat">
+                <div class="map-stat-value" id="totalFeeds">0</div>
+                <div class="map-stat-label">Total</div>
             </div>
-            <div class="stat">
-                <div class="stat-value" id="workingFeeds">0</div>
-                <div class="stat-label">Online</div>
+            <div class="map-stat">
+                <div class="map-stat-value" id="workingFeeds">0</div>
+                <div class="map-stat-label">Online</div>
             </div>
-            <div class="stat">
-                <div class="stat-value" id="vehicleFeeds">0</div>
-                <div class="stat-label">Vehicles Detected</div>
+            <div class="map-stat">
+                <div class="map-stat-value" id="vehicleFeeds">0</div>
+                <div class="map-stat-label">Vehicles</div>
             </div>
         </div>
     </div>
 
-    <div class="filters">
+    <div class="map-filters" id="filtersPanel">
         <div class="filter-group">
-            <label>Search by Road</label>
-            <input type="text" id="roadFilter" placeholder="e.g., 國道1號">
+            <label for="roadFilter">Search by Road</label>
+            <input type="text" id="roadFilter" placeholder="e.g., National Highway 1">
         </div>
         <div class="filter-group">
-            <label>Vehicle Detection</label>
+            <label for="vehicleFilter">Vehicle Detection</label>
             <select id="vehicleFilter">
                 <option value="all">All Feeds</option>
                 <option value="with_vehicles">With Vehicles</option>
                 <option value="no_vehicles">No Vehicles</option>
             </select>
         </div>
-        <div class="filter-buttons">
-            <button class="btn btn-primary" onclick="applyFilters()">Apply</button>
-            <button class="btn btn-secondary" onclick="resetFilters()">Reset</button>
+        <div class="filter-actions">
+            <button class="btn btn-primary" id="applyFiltersBtn">Apply</button>
+            <button class="btn" id="resetFiltersBtn">Reset</button>
+        </div>
+    </div>
+
+    <div class="map-legend">
+        <div class="legend-title">Legend</div>
+        <div class="legend-item">
+            <div class="legend-dot online"></div>
+            <span>Online</span>
+        </div>
+        <div class="legend-item">
+            <div class="legend-dot vehicles"></div>
+            <span>Vehicles Detected</span>
+        </div>
+        <div class="legend-item">
+            <div class="legend-dot offline"></div>
+            <span>Offline</span>
+        </div>
+    </div>
+
+    <div class="map-connection">
+        <div id="connectionStatus" class="connection-status disconnected">
+            <span class="connection-dot"></span>
+            <span class="connection-text">Connecting...</span>
         </div>
     </div>
 
@@ -289,36 +387,46 @@
 
     <!-- Leaflet JS -->
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-
-    <!-- Leaflet MarkerCluster JS -->
     <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
+    <script src="scripts/utils.js"></script>
 
     <script>
-        // Dynamic API URLs based on current hostname
+        // Configuration
         const hostname = window.location.hostname;
         const API_BASE = `http://${hostname}:8001`;
         const WS_URL = `ws://${hostname}:8001`;
+
+        // State
         let map;
-        let markers = L.markerClusterGroup();
+        let markers = L.markerClusterGroup({
+            maxClusterRadius: 50,
+            spiderfyOnMaxZoom: true,
+            showCoverageOnHover: false,
+            zoomToBoundsOnClick: true
+        });
         let allFeeds = [];
-        let feedMarkers = {};  // Map feed_id to marker object
+        let feedMarkers = {};
         let ws = null;
         let wsReconnectTimeout = null;
 
-        // Initialize map centered on Taiwan
+        // Initialize map
         function initMap() {
-            map = L.map('map').setView([23.8, 121.0], 8);
+            map = L.map('map', {
+                zoomControl: true
+            }).setView([23.8, 121.0], 8);
 
-            // Add OpenStreetMap tiles
             L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-                attribution: '© OpenStreetMap contributors',
+                attribution: '&copy; OpenStreetMap contributors',
                 maxZoom: 18
             }).addTo(map);
 
             map.addLayer(markers);
+
+            // Move zoom control to right side
+            map.zoomControl.setPosition('topright');
         }
 
-        // Create custom marker icon
+        // Create marker icon
         function createMarkerIcon(isWorking, hasVehicles) {
             let className = 'marker-icon ';
             if (!isWorking) {
@@ -329,41 +437,42 @@
                 className += 'marker-working';
             }
 
-            const icon = hasVehicles ? '●' : (isWorking ? '●' : '●');
-
             return L.divIcon({
-                html: `<div class="${className}">${icon}</div>`,
+                html: `<div class="${className}"></div>`,
                 className: '',
-                iconSize: [30, 30],
-                iconAnchor: [15, 15],
-                popupAnchor: [0, -15]
+                iconSize: [28, 28],
+                iconAnchor: [14, 14],
+                popupAnchor: [0, -14]
             });
         }
 
         // Create popup content
         function createPopup(feed) {
             const status = !feed.isWorking ? 'Offline' : (feed.hasVehicles ? 'Vehicles Detected' : 'Online');
-            const statusClass = !feed.isWorking ? 'status-offline' : (feed.hasVehicles ? 'status-vehicles' : 'status-working');
+            const statusClass = !feed.isWorking ? 'offline' : (feed.hasVehicles ? 'vehicles' : 'online');
 
             return `
                 <div>
                     <div class="popup-title">${feed.roadName || 'Unknown Road'}</div>
-                    <div class="popup-info">Location: ${feed.locationMile || 'Unknown location'}</div>
+                    <div class="popup-info">Location: ${feed.locationMile || 'Unknown'}</div>
                     <div class="popup-info">Direction: ${feed.direction || 'N/A'}</div>
                     <div class="popup-info">ID: ${feed.id}</div>
                     <div class="popup-status ${statusClass}">${status}</div>
                     ${feed.isWorking ? `
-                        <img class="popup-image" src="${API_BASE}/api/feeds/${feed.id}/snapshot" alt="Feed snapshot" onerror="this.style.display='none'">
-                        <div class="popup-buttons">
-                            <button class="popup-btn" onclick="openFeed('${feed.id}')">View Feed</button>
-                            <button class="popup-btn" onclick="viewHistory('${feed.id}')">History</button>
+                        <img class="popup-image"
+                             src="${API_BASE}/api/feeds/${feed.id}/snapshot?t=${Date.now()}"
+                             alt="Feed preview"
+                             onerror="this.style.display='none'">
+                        <div class="popup-actions">
+                            <button class="btn btn-primary" onclick="openFeed('${feed.id}')">View Feed</button>
+                            <button class="btn" onclick="centerOnFeed('${feed.id}')">Zoom In</button>
                         </div>
                     ` : ''}
                 </div>
             `;
         }
 
-        // Load feed data from API
+        // Load feeds from API
         async function loadFeeds() {
             try {
                 const response = await fetch(`${API_BASE}/api/map`);
@@ -374,6 +483,7 @@
                 updateStats();
             } catch (error) {
                 console.error('Error loading feeds:', error);
+                Toast.error('Failed to load feed data');
             }
         }
 
@@ -390,10 +500,12 @@
                     icon: createMarkerIcon(props.isWorking, props.hasVehicles)
                 });
 
-                marker.bindPopup(createPopup(props));
+                marker.bindPopup(createPopup(props), {
+                    maxWidth: 300
+                });
+
                 markers.addLayer(marker);
 
-                // Store reference for real-time updates
                 feedMarkers[props.id] = {
                     marker: marker,
                     props: props,
@@ -402,19 +514,14 @@
             });
         }
 
-        // Update single marker (for WebSocket updates)
+        // Update single marker
         function updateMarker(feedId, isWorking, hasVehicles) {
             const feedMarker = feedMarkers[feedId];
             if (!feedMarker) return;
 
-            // Update properties
             feedMarker.props.isWorking = isWorking;
             feedMarker.props.hasVehicles = hasVehicles;
-
-            // Update marker icon
             feedMarker.marker.setIcon(createMarkerIcon(isWorking, hasVehicles));
-
-            // Update popup
             feedMarker.marker.setPopupContent(createPopup(feedMarker.props));
         }
 
@@ -447,7 +554,6 @@
                 const response = await fetch(url);
                 const data = await response.json();
 
-                // Convert feeds to GeoJSON features
                 const features = data.feeds.map(feed => ({
                     type: 'Feature',
                     geometry: {
@@ -466,8 +572,10 @@
                 })).filter(f => f.geometry.coordinates[0] !== 0 && f.geometry.coordinates[1] !== 0);
 
                 displayFeeds(features);
+                Toast.success(`Found ${features.length} feeds`);
             } catch (error) {
                 console.error('Error applying filters:', error);
+                Toast.error('Failed to apply filters');
             }
         }
 
@@ -476,6 +584,7 @@
             document.getElementById('roadFilter').value = '';
             document.getElementById('vehicleFilter').value = 'all';
             displayFeeds(allFeeds);
+            Toast.info('Filters reset');
         }
 
         // Open feed in new window
@@ -483,18 +592,24 @@
             window.open(`feed.html?id=${feedId}`, '_blank');
         }
 
-        // View feed history
-        function viewHistory(feedId) {
-            alert(`History viewer for ${feedId} coming soon!`);
+        // Center map on feed
+        function centerOnFeed(feedId) {
+            const feedMarker = feedMarkers[feedId];
+            if (feedMarker) {
+                map.setView([feedMarker.coordinates[1], feedMarker.coordinates[0]], 15);
+            }
         }
 
-        // WebSocket Connection for Real-Time Updates
+        // WebSocket connection
         function connectWebSocket() {
-            console.log('Map: Connecting to WebSocket...');
+            ConnectionStatus.init('connectionStatus');
+            ConnectionStatus.setStatus('connecting');
+
             ws = new WebSocket(`${WS_URL}/ws`);
 
             ws.onopen = () => {
                 console.log('Map: WebSocket connected');
+                ConnectionStatus.setStatus('connected');
                 if (wsReconnectTimeout) {
                     clearTimeout(wsReconnectTimeout);
                     wsReconnectTimeout = null;
@@ -505,18 +620,21 @@
                 try {
                     const data = JSON.parse(event.data);
                     handleWebSocketMessage(data);
+                    ConnectionStatus.updateLastSeen();
                 } catch (error) {
-                    console.error('Map: Error parsing WebSocket message:', error);
+                    console.error('Error parsing WebSocket message:', error);
                 }
             };
 
             ws.onerror = (error) => {
                 console.error('Map: WebSocket error:', error);
+                ConnectionStatus.setStatus('disconnected');
             };
 
             ws.onclose = () => {
-                console.log('Map: WebSocket disconnected. Reconnecting in 5 seconds...');
+                console.log('Map: WebSocket disconnected');
                 ws = null;
+                ConnectionStatus.setStatus('disconnected');
                 wsReconnectTimeout = setTimeout(connectWebSocket, 5000);
             };
         }
@@ -524,38 +642,32 @@
         function handleWebSocketMessage(data) {
             switch (data.type) {
                 case 'detection':
-                    // Update marker to show vehicles detected
                     updateMarker(data.feed_id, true, true);
                     updateStats();
-                    const detectionInfo = data.data || {};
-                    const vehicleCount = detectionInfo.vehicle_count || 'unknown';
-                    console.log(`Map: 🚗 Vehicle detected at ${data.feed_id} - ${vehicleCount} vehicles`);
                     break;
 
                 case 'feed_status':
-                    // Update marker status
                     updateMarker(data.feed_id, data.is_working, data.has_vehicles);
                     updateStats();
                     break;
 
-                case 'heartbeat':
-                    // Server heartbeat - connection is alive
-                    console.debug('Map: WebSocket heartbeat received');
-                    break;
-
                 case 'stats':
-                    // System statistics update - could update the header stats
                     if (data.data) {
                         document.getElementById('totalFeeds').textContent = data.data.totalFeeds || 0;
                         document.getElementById('workingFeeds').textContent = data.data.workingFeeds || 0;
                         document.getElementById('vehicleFeeds').textContent = data.data.vehiclesDetectedFeeds || 0;
                     }
                     break;
-
-                default:
-                    console.log('Map: Unknown WebSocket message type:', data.type);
             }
         }
+
+        // Event listeners
+        document.getElementById('applyFiltersBtn').addEventListener('click', applyFilters);
+        document.getElementById('resetFiltersBtn').addEventListener('click', resetFilters);
+
+        document.getElementById('roadFilter').addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') applyFilters();
+        });
 
         // Initialize
         initMap();
@@ -563,9 +675,7 @@
         connectWebSocket();
 
         // Refresh every 30 seconds
-        setInterval(() => {
-            loadFeeds();
-        }, 30000);
+        setInterval(loadFeeds, 30000);
     </script>
 </body>
 </html>

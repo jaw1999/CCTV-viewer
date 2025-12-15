@@ -2,10 +2,18 @@
 """
 FastAPI backend for Taiwan CCTV Viewer
 Ingests and caches all 2,500+ feeds in real-time
+
+Features:
+- Real-time vehicle detection with YOLOv8
+- Multi-object tracking across camera feeds
+- WebSocket real-time updates
+- REST API with authentication and rate limiting
+- Stream out to CoT/Lattice systems
 """
 
 import asyncio
 import ssl
+import certifi
 import sys
 import time
 import socket
@@ -19,20 +27,21 @@ from pathlib import Path
 import xml.etree.ElementTree as ET
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import asynccontextmanager
+from functools import lru_cache
 import numpy as np
 
 import httpx
 import yaml
-from fastapi import FastAPI, HTTPException, Response, WebSocket
+from fastapi import FastAPI, HTTPException, Response, WebSocket, Depends, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import StreamingResponse, FileResponse
+from fastapi.exceptions import RequestValidationError
 from PIL import Image
 from ultralytics import YOLO
-from pydantic import BaseModel
 import cv2
 
-# Import our new modules
+# Import our modules
 try:
     from .database import DatabaseManager
     from .tracker import TrackerManager, Detection as TrackerDetection
@@ -40,6 +49,18 @@ try:
     from .observability import (
         MetricsCollector, HealthChecker, StructuredLogger,
         CircuitBreaker, AlertManager
+    )
+    from .middleware import (
+        APIKeyMiddleware, RateLimitMiddleware, ErrorHandlerMiddleware,
+        RequestLoggingMiddleware
+    )
+    from .middleware.error_handler import (
+        custom_http_exception_handler, custom_validation_exception_handler
+    )
+    from .schemas import (
+        StreamConfigRequest, StreamConfigResponse,
+        SearchResponse, FeedHistoryResponse, FeedStatsResponse,
+        StatsResponse, HealthResponse, ErrorResponse
     )
 except ImportError:
     # Fallback for direct execution
@@ -49,6 +70,18 @@ except ImportError:
     from observability import (
         MetricsCollector, HealthChecker, StructuredLogger,
         CircuitBreaker, AlertManager
+    )
+    from middleware import (
+        APIKeyMiddleware, RateLimitMiddleware, ErrorHandlerMiddleware,
+        RequestLoggingMiddleware
+    )
+    from middleware.error_handler import (
+        custom_http_exception_handler, custom_validation_exception_handler
+    )
+    from schemas import (
+        StreamConfigRequest, StreamConfigResponse,
+        SearchResponse, FeedHistoryResponse, FeedStatsResponse,
+        StatsResponse, HealthResponse, ErrorResponse
     )
 
 # Import Prometheus client for metrics endpoint
@@ -120,24 +153,40 @@ stream_config = {
     "latticeUrl": CONFIG.get('stream_out', {}).get('lattice', {}).get('url', '')
 }
 
-# Pydantic model for stream configuration
-class StreamConfig(BaseModel):
-    enabled: bool
-    format: str
-    ip: str
-    port: int
-    latticeToken: Optional[str] = ""
-    latticeSandboxToken: Optional[str] = ""
-    latticeIntegration: Optional[str] = "taiwan-cctv"
-    latticeUrl: Optional[str] = ""
-
 # Lattice client (initialized when token is provided)
 lattice_client = None
 
-# SSL context for Taiwan servers
-ssl_context = ssl.create_default_context()
-ssl_context.check_hostname = False
-ssl_context.verify_mode = ssl.CERT_NONE
+
+def create_ssl_context(verify: bool = True) -> ssl.SSLContext:
+    """
+    Create SSL context with proper certificate verification.
+
+    Args:
+        verify: If True, use system CA certificates for verification.
+                If False, disable verification (NOT recommended for production).
+
+    Returns:
+        Configured SSL context
+    """
+    if verify:
+        # Use certifi's CA bundle for proper SSL verification
+        ssl_context = ssl.create_default_context(cafile=certifi.where())
+        ssl_context.check_hostname = True
+        ssl_context.verify_mode = ssl.CERT_REQUIRED
+    else:
+        # Fallback for development/testing with self-signed certs
+        ssl_context = ssl.create_default_context()
+        ssl_context.check_hostname = False
+        ssl_context.verify_mode = ssl.CERT_NONE
+        logger.warning("SSL verification disabled - NOT recommended for production")
+
+    return ssl_context
+
+
+# SSL context - defaults to verification enabled
+# Set CCTV_SSL_VERIFY=false to disable (not recommended)
+SSL_VERIFY = os.environ.get("CCTV_SSL_VERIFY", "true").lower() != "false"
+ssl_context = create_ssl_context(verify=SSL_VERIFY)
 
 
 def generate_cot_message(feed: Dict) -> str:
@@ -964,18 +1013,80 @@ async def lifespan(app: FastAPI):
         logger.info("Database connection closed")
 
 
-app = FastAPI(title="Taiwan CCTV API (Optimized)", lifespan=lifespan)
+app = FastAPI(
+    title="Taiwan CCTV API",
+    description="Real-time vehicle detection and tracking for Taiwan highway cameras",
+    version="2.0.0",
+    lifespan=lifespan,
+    responses={
+        401: {"model": ErrorResponse, "description": "Authentication required"},
+        403: {"model": ErrorResponse, "description": "Invalid API key"},
+        422: {"model": ErrorResponse, "description": "Validation error"},
+        429: {"model": ErrorResponse, "description": "Rate limit exceeded"},
+        500: {"model": ErrorResponse, "description": "Internal server error"},
+    },
+)
 
-# OPTIMIZATION: Add GZip compression middleware (30-50% smaller payloads)
+# Register custom exception handlers
+app.add_exception_handler(HTTPException, custom_http_exception_handler)
+app.add_exception_handler(RequestValidationError, custom_validation_exception_handler)
+
+# ============================================================================
+# Middleware Stack (order matters - first added = outermost)
+# ============================================================================
+
+# 1. Error handling (outermost - catches all errors)
+app.add_middleware(
+    ErrorHandlerMiddleware,
+    include_traceback=os.environ.get("CCTV_DEBUG", "false").lower() == "true"
+)
+
+# 2. Request logging
+app.add_middleware(
+    RequestLoggingMiddleware,
+    exclude_paths=["/health", "/health/live", "/health/ready", "/metrics"],
+    slow_request_threshold_ms=1000.0,
+)
+
+# 3. Rate limiting
+rate_limit_config = CONFIG.get('api', {})
+app.add_middleware(
+    RateLimitMiddleware,
+    requests_per_minute=rate_limit_config.get('rate_limit', 100),
+    burst_size=rate_limit_config.get('burst_size', 20),
+    enabled=rate_limit_config.get('rate_limit_enabled', True),
+)
+
+# 4. API key authentication
+app.add_middleware(
+    APIKeyMiddleware,
+    exclude_paths=["/", "/health", "/health/live", "/health/ready", "/docs", "/redoc", "/openapi.json"],
+    exclude_prefixes=["/metrics"],
+    enabled=os.environ.get("CCTV_AUTH_ENABLED", "true").lower() == "true",
+)
+
+# 5. GZip compression
 app.add_middleware(GZipMiddleware, minimum_size=1000)
 
-# Add CORS middleware
+# 6. CORS - Configure properly based on environment
+cors_config = CONFIG.get('api', {})
+allowed_origins = os.environ.get("CCTV_CORS_ORIGINS", "").split(",")
+allowed_origins = [o.strip() for o in allowed_origins if o.strip()]
+
+# Default to restrictive CORS in production, permissive in development
+if not allowed_origins:
+    if os.environ.get("CCTV_ENV", "development") == "production":
+        allowed_origins = ["https://your-frontend-domain.com"]  # Configure this!
+    else:
+        allowed_origins = ["*"]  # Development only
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
+    allow_origins=allowed_origins,
+    allow_credentials=True if allowed_origins != ["*"] else False,
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allow_headers=["*"],
+    expose_headers=["X-Request-ID", "X-RateLimit-Limit", "X-RateLimit-Remaining", "X-RateLimit-Reset"],
 )
 
 # Mount Prometheus metrics endpoint
@@ -1342,8 +1453,8 @@ async def get_stream_config():
     return stream_config
 
 
-@app.post("/api/stream/config")
-async def set_stream_config(config: StreamConfig):
+@app.post("/api/stream/config", response_model=StreamConfigResponse)
+async def set_stream_config(config: StreamConfigRequest):
     """Set stream out configuration"""
     global stream_config
     stream_config["enabled"] = config.enabled
