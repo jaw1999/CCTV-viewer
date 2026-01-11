@@ -1,5 +1,5 @@
 """
-Database models and utilities for Taiwan CCTV Viewer
+Database models and session management.
 """
 from datetime import datetime
 from sqlalchemy import (
@@ -16,7 +16,6 @@ Base = declarative_base()
 
 
 class Feed(Base):
-    """Camera feed metadata"""
     __tablename__ = 'feeds'
 
     id = Column(String(50), primary_key=True)
@@ -40,7 +39,6 @@ class Feed(Base):
 
 
 class Detection(Base):
-    """Individual vehicle detection event"""
     __tablename__ = 'detections'
     __table_args__ = (
         # Composite index for common queries (feed + time range)
@@ -67,7 +65,6 @@ class Detection(Base):
 
 
 class VehicleTrack(Base):
-    """Tracked vehicle over time"""
     __tablename__ = 'vehicle_tracks'
     __table_args__ = (
         # Composite index for track lookup
@@ -98,35 +95,22 @@ class VehicleTrack(Base):
 
 
 class DatabaseManager:
-    """Manages database connections and operations"""
-
     def __init__(self, database_url: str):
-        """
-        Initialize database manager
-
-        Args:
-            database_url: SQLAlchemy database URL
-                - SQLite: "sqlite+aiosqlite:///./data/cctv_data.db"
-                - PostgreSQL: "postgresql+asyncpg://user:pass@host/db"
-        """
         self.engine = create_async_engine(database_url, echo=False)
         self.async_session = async_sessionmaker(
             self.engine, class_=AsyncSession, expire_on_commit=False
         )
 
     async def init_db(self):
-        """Create all tables"""
         async with self.engine.begin() as conn:
             await conn.run_sync(Base.metadata.create_all)
         print("✓ Database tables created")
 
     async def close(self):
-        """Close database connection"""
         await self.engine.dispose()
 
     @asynccontextmanager
     async def session(self):
-        """Provide a transactional scope for database operations"""
         async with self.async_session() as session:
             try:
                 yield session
@@ -136,7 +120,6 @@ class DatabaseManager:
                 raise
 
     async def upsert_feed(self, feed_data: dict):
-        """Insert or update feed metadata"""
         async with self.session() as session:
             from sqlalchemy import select
 
@@ -178,7 +161,6 @@ class DatabaseManager:
                            vehicle_types: list, confidence_avg: float,
                            boxes: Optional[str] = None,
                            snapshot_path: Optional[str] = None):
-        """Record a vehicle detection event"""
         async with self.session() as session:
             from sqlalchemy import select
             import json
@@ -205,7 +187,6 @@ class DatabaseManager:
     async def update_vehicle_track(self, feed_id: str, track_id: int,
                                    vehicle_class: str, confidence: float,
                                    position: tuple, speed: Optional[float] = None):
-        """Update or create a vehicle track"""
         async with self.session() as session:
             from sqlalchemy import select, and_
             import json
@@ -255,7 +236,6 @@ class DatabaseManager:
                 session.add(track)
 
     async def get_feed_history(self, feed_id: str, hours: int = 24):
-        """Get detection history for a feed"""
         from sqlalchemy import select
         from datetime import timedelta
 
@@ -270,7 +250,6 @@ class DatabaseManager:
             return result.scalars().all()
 
     async def get_feed_stats(self, feed_id: str, days: int = 7):
-        """Get statistics for a feed"""
         from sqlalchemy import select, func
         from datetime import timedelta
 
@@ -305,7 +284,6 @@ class DatabaseManager:
 
     async def cleanup_old_data(self, detection_retention_days: int = 30,
                               history_retention_days: int = 90):
-        """Delete old data based on retention policy"""
         from sqlalchemy import delete
         from datetime import timedelta
 

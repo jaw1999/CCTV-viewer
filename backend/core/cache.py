@@ -1,6 +1,5 @@
 """
-Caching utilities for CCTV Viewer
-Implements LRU cache with size limits and TTL support
+LRU cache with size limits and TTL.
 """
 import time
 import hashlib
@@ -15,7 +14,6 @@ T = TypeVar('T')
 
 @dataclass
 class CacheEntry(Generic[T]):
-    """Single cache entry with metadata"""
     value: T
     size_bytes: int
     created_at: float
@@ -25,17 +23,7 @@ class CacheEntry(Generic[T]):
 
 
 class LRUCache(Generic[T]):
-    """
-    Thread-safe LRU cache with size limits and TTL support.
-
-    Features:
-    - Maximum item count limit
-    - Maximum total size limit (bytes)
-    - TTL (time-to-live) per item
-    - LRU eviction policy
-    - Thread-safe operations
-    - Statistics tracking
-    """
+    """Thread-safe LRU cache with max items, max size, and optional TTL."""
 
     def __init__(
         self,
@@ -57,11 +45,7 @@ class LRUCache(Generic[T]):
         self._evictions = 0
 
     def get(self, key: str) -> Optional[T]:
-        """
-        Get item from cache.
-        Updates access time and moves to end (most recently used).
-        Returns None if not found or expired.
-        """
+        """Returns None if missing or expired."""
         with self._lock:
             if key not in self._cache:
                 self._misses += 1
@@ -90,11 +74,7 @@ class LRUCache(Generic[T]):
         size_bytes: Optional[int] = None,
         hash_value: Optional[str] = None,
     ) -> bool:
-        """
-        Set item in cache.
-        Evicts LRU items if necessary to stay within limits.
-        Returns True if item was cached, False if it couldn't fit.
-        """
+        """Store item, evicting LRU entries if needed. Returns False if item won't fit."""
         # Estimate size if not provided
         if size_bytes is None:
             if isinstance(value, (bytes, bytearray)):
@@ -138,7 +118,6 @@ class LRUCache(Generic[T]):
             return True
 
     def delete(self, key: str) -> bool:
-        """Remove item from cache. Returns True if item was found."""
         with self._lock:
             if key in self._cache:
                 self._remove_entry(key)
@@ -146,19 +125,16 @@ class LRUCache(Generic[T]):
             return False
 
     def clear(self):
-        """Clear all items from cache"""
         with self._lock:
             self._cache.clear()
             self._total_size = 0
 
     def _remove_entry(self, key: str):
-        """Remove entry and update size (must hold lock)"""
         if key in self._cache:
             entry = self._cache.pop(key)
             self._total_size -= entry.size_bytes
 
     def _evict_one(self):
-        """Evict least recently used item (must hold lock)"""
         if self._cache:
             # First item is LRU (OrderedDict maintains insertion order)
             key = next(iter(self._cache))
@@ -166,7 +142,6 @@ class LRUCache(Generic[T]):
             self._evictions += 1
 
     def has_changed(self, key: str, new_hash: str) -> bool:
-        """Check if content has changed by comparing hashes"""
         with self._lock:
             if key not in self._cache:
                 return True
@@ -174,17 +149,14 @@ class LRUCache(Generic[T]):
 
     @property
     def size(self) -> int:
-        """Current number of items in cache"""
         return len(self._cache)
 
     @property
     def size_bytes(self) -> int:
-        """Current total size in bytes"""
         return self._total_size
 
     @property
     def stats(self) -> Dict[str, Any]:
-        """Get cache statistics"""
         total_requests = self._hits + self._misses
         hit_rate = self._hits / total_requests if total_requests > 0 else 0
 
@@ -201,7 +173,6 @@ class LRUCache(Generic[T]):
         }
 
     def cleanup_expired(self) -> int:
-        """Remove all expired entries. Returns number removed."""
         if not self.ttl_seconds:
             return 0
 
@@ -222,15 +193,7 @@ class LRUCache(Generic[T]):
 
 
 class FeedCache:
-    """
-    Specialized cache for CCTV feed images.
-
-    Features:
-    - Stores JPEG image bytes
-    - Tracks image hashes for change detection
-    - Maintains feed status alongside images
-    - Configurable size limits
-    """
+    """Cache for feed images with status tracking and change detection."""
 
     def __init__(
         self,
@@ -249,7 +212,6 @@ class FeedCache:
         self._lock = Lock()
 
     def get_image(self, feed_id: str) -> Optional[bytes]:
-        """Get cached image for feed"""
         return self._image_cache.get(feed_id)
 
     def set_image(
@@ -259,7 +221,6 @@ class FeedCache:
         is_working: bool = True,
         has_vehicles: bool = False,
     ):
-        """Cache image and update status"""
         image_hash = hashlib.md5(image_bytes).hexdigest()
 
         self._image_cache.set(
@@ -275,7 +236,6 @@ class FeedCache:
             self._image_hash[feed_id] = image_hash
 
     def has_image_changed(self, feed_id: str, new_image_bytes: bytes) -> bool:
-        """Check if image has changed since last cache"""
         new_hash = hashlib.md5(new_image_bytes).hexdigest()
 
         with self._lock:
@@ -284,37 +244,30 @@ class FeedCache:
         return old_hash != new_hash
 
     def get_status(self, feed_id: str) -> Optional[bool]:
-        """Get feed working status"""
         with self._lock:
             return self._status.get(feed_id)
 
     def set_status(self, feed_id: str, is_working: bool):
-        """Set feed working status"""
         with self._lock:
             self._status[feed_id] = is_working
 
     def get_vehicle_detected(self, feed_id: str) -> bool:
-        """Get vehicle detection status"""
         with self._lock:
             return self._vehicle_detected.get(feed_id, False)
 
     def set_vehicle_detected(self, feed_id: str, has_vehicles: bool):
-        """Set vehicle detection status"""
         with self._lock:
             self._vehicle_detected[feed_id] = has_vehicles
 
     def get_all_status(self) -> Dict[str, bool]:
-        """Get all feed statuses"""
         with self._lock:
             return self._status.copy()
 
     def get_all_vehicle_detected(self) -> Dict[str, bool]:
-        """Get all vehicle detection statuses"""
         with self._lock:
             return self._vehicle_detected.copy()
 
     def delete(self, feed_id: str):
-        """Remove feed from cache"""
         self._image_cache.delete(feed_id)
         with self._lock:
             self._status.pop(feed_id, None)
@@ -322,7 +275,6 @@ class FeedCache:
             self._image_hash.pop(feed_id, None)
 
     def clear(self):
-        """Clear all cached data"""
         self._image_cache.clear()
         with self._lock:
             self._status.clear()
@@ -331,7 +283,6 @@ class FeedCache:
 
     @property
     def stats(self) -> Dict[str, Any]:
-        """Get cache statistics"""
         base_stats = self._image_cache.stats
 
         with self._lock:
@@ -346,13 +297,8 @@ class FeedCache:
         }
 
 
-# Async wrapper for background cleanup
-
-async def periodic_cache_cleanup(
-    cache: LRUCache,
-    interval_seconds: float = 60.0,
-):
-    """Background task to periodically cleanup expired cache entries"""
+async def periodic_cache_cleanup(cache: LRUCache, interval_seconds: float = 60.0):
+    """Runs in background, removing expired entries."""
     while True:
         await asyncio.sleep(interval_seconds)
         try:

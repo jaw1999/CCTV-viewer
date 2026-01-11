@@ -1,6 +1,5 @@
 """
-Object tracking for vehicle detection
-Implements IoU-based tracking with Kalman filtering
+IoU-based multi-object tracker (SORT variant).
 """
 import numpy as np
 from typing import Dict, List, Tuple, Optional
@@ -10,7 +9,6 @@ from filterpy.kalman import KalmanFilter
 
 @dataclass
 class Detection:
-    """Single detection from YOLO"""
     bbox: np.ndarray  # [x1, y1, x2, y2]
     confidence: float
     class_id: int
@@ -19,7 +17,6 @@ class Detection:
 
 @dataclass
 class Track:
-    """Tracked object"""
     track_id: int
     bbox: np.ndarray  # [x1, y1, x2, y2]
     confidence: float
@@ -31,16 +28,7 @@ class Track:
 
 
 def bbox_iou(bbox1: np.ndarray, bbox2: np.ndarray) -> float:
-    """
-    Calculate Intersection over Union (IoU) between two bounding boxes
-
-    Args:
-        bbox1: [x1, y1, x2, y2]
-        bbox2: [x1, y1, x2, y2]
-
-    Returns:
-        IoU score (0-1)
-    """
+    """IoU between two [x1, y1, x2, y2] boxes."""
     # Get intersection coordinates
     x1 = max(bbox1[0], bbox2[0])
     y1 = max(bbox1[1], bbox2[1])
@@ -60,21 +48,9 @@ def bbox_iou(bbox1: np.ndarray, bbox2: np.ndarray) -> float:
 
 
 class VehicleTracker:
-    """
-    Simple multi-object tracker using IoU matching and Kalman filtering
-
-    Based on SORT (Simple Online and Realtime Tracking) algorithm
-    """
+    """SORT-based tracker with IoU matching."""
 
     def __init__(self, max_age: int = 30, min_hits: int = 3, iou_threshold: float = 0.3):
-        """
-        Initialize tracker
-
-        Args:
-            max_age: Maximum frames to keep track alive without detections
-            min_hits: Minimum detections before track is confirmed
-            iou_threshold: Minimum IoU for matching detection to track
-        """
         self.max_age = max_age
         self.min_hits = min_hits
         self.iou_threshold = iou_threshold
@@ -94,15 +70,7 @@ class VehicleTracker:
         }
 
     def update(self, detections: List[Detection]) -> List[Track]:
-        """
-        Update tracks with new detections
-
-        Args:
-            detections: List of Detection objects from YOLO
-
-        Returns:
-            List of confirmed tracks (hits >= min_hits)
-        """
+        """Returns confirmed tracks after matching detections."""
         self.frame_count += 1
 
         # Match detections to existing tracks using IoU
@@ -148,12 +116,7 @@ class VehicleTracker:
         return [t for t in self.tracks if t.hits >= self.min_hits]
 
     def _match_detections_to_tracks(self, detections: List[Detection]) -> Tuple[List[Tuple[int, int]], List[int], List[int]]:
-        """
-        Match detections to existing tracks using IoU
-
-        Returns:
-            (matched_pairs, unmatched_detections, unmatched_tracks)
-        """
+        """Greedy IoU matching. Returns (matched, unmatched_dets, unmatched_tracks)."""
         if len(self.tracks) == 0:
             return [], list(range(len(detections))), []
 
@@ -196,7 +159,6 @@ class VehicleTracker:
         return matched_pairs, unmatched_detections, unmatched_tracks
 
     def get_track_count(self) -> Dict[str, int]:
-        """Get count of confirmed tracks by vehicle type"""
         confirmed_tracks = [t for t in self.tracks if t.hits >= self.min_hits]
         counts = {}
         for track in confirmed_tracks:
@@ -204,14 +166,13 @@ class VehicleTracker:
         return counts
 
     def reset(self):
-        """Reset tracker state"""
         self.tracks = []
         self.next_id = 0
         self.frame_count = 0
 
 
 class TrackerManager:
-    """Manages trackers for multiple camera feeds"""
+    """Per-feed tracker instances."""
 
     def __init__(self, max_age: int = 30, min_hits: int = 3, iou_threshold: float = 0.3):
         self.trackers: Dict[str, VehicleTracker] = {}
@@ -220,7 +181,6 @@ class TrackerManager:
         self.iou_threshold = iou_threshold
 
     def get_tracker(self, feed_id: str) -> VehicleTracker:
-        """Get or create tracker for a feed"""
         if feed_id not in self.trackers:
             self.trackers[feed_id] = VehicleTracker(
                 max_age=self.max_age,
@@ -230,16 +190,7 @@ class TrackerManager:
         return self.trackers[feed_id]
 
     def update_tracker(self, feed_id: str, yolo_results) -> Tuple[List[Track], Dict[str, int]]:
-        """
-        Update tracker for a feed with YOLO results
-
-        Args:
-            feed_id: Camera feed ID
-            yolo_results: YOLO detection results object
-
-        Returns:
-            (confirmed_tracks, track_counts)
-        """
+        """Process YOLO results and return (tracks, counts)."""
         tracker = self.get_tracker(feed_id)
 
         # Convert YOLO results to Detection objects
@@ -267,10 +218,8 @@ class TrackerManager:
         return confirmed_tracks, track_counts
 
     def reset_tracker(self, feed_id: str):
-        """Reset tracker for a specific feed"""
         if feed_id in self.trackers:
             self.trackers[feed_id].reset()
 
     def reset_all(self):
-        """Reset all trackers"""
         self.trackers = {}
