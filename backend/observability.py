@@ -303,9 +303,14 @@ class HealthChecker:
         try:
             # HTTP client is created on-demand in main.py, so it's normal to not have it initially
             # Check if we have any cached feeds (which means HTTP client has worked)
-            has_cache = hasattr(self.app_state, 'feed_cache') and len(self.app_state.feed_cache) > 0
+            feed_cache = getattr(self.app_state, 'feed_cache', None)
+            cached_count = 0
+            if feed_cache is not None:
+                # Use the stats property to get cached item count
+                cache_stats = feed_cache.stats
+                cached_count = cache_stats.get('items', 0)
 
-            if has_cache:
+            if cached_count > 0:
                 # HTTP client is working fine since we have fetched feeds
                 latency_ms = (time.time() - start_time) * 1000
                 return ComponentHealth(
@@ -313,7 +318,7 @@ class HealthChecker:
                     status=HealthStatus.HEALTHY,
                     message="HTTP client operational",
                     latency_ms=round(latency_ms, 2),
-                    metadata={"cached_feeds": len(self.app_state.feed_cache)}
+                    metadata={"cached_feeds": cached_count}
                 )
             else:
                 # Not degraded, just initializing

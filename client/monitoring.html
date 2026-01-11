@@ -3,97 +3,425 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Operational Dashboard - Taiwan CCTV Viewer</title>
+    <title>System Monitor - Taiwan CCTV Viewer</title>
     <link rel="stylesheet" href="styles/common.css">
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
     <style>
-        /* Dashboard-specific styles */
-        .dashboard-header {
+        /* Modern Dashboard Styles */
+        .dashboard-container {
+            padding: var(--spacing-xl);
+            max-width: 1800px;
+            margin: 0 auto;
+        }
+
+        /* Hero Stats Section */
+        .hero-stats {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: var(--spacing-lg);
+            margin-bottom: var(--spacing-xl);
+        }
+
+        .hero-stat {
+            background: linear-gradient(135deg, var(--color-bg-secondary) 0%, var(--color-bg-tertiary) 100%);
+            border-radius: var(--radius-xl);
+            padding: var(--spacing-xl);
+            position: relative;
+            overflow: hidden;
+            border: 1px solid var(--color-border);
+            transition: transform var(--transition-normal), box-shadow var(--transition-normal);
+        }
+
+        .hero-stat:hover {
+            transform: translateY(-2px);
+            box-shadow: var(--shadow-lg);
+        }
+
+        .hero-stat::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 4px;
+            background: var(--color-accent);
+        }
+
+        .hero-stat.online::before { background: linear-gradient(90deg, #10b981, #34d399); }
+        .hero-stat.vehicles::before { background: linear-gradient(90deg, #f59e0b, #fbbf24); }
+        .hero-stat.connections::before { background: linear-gradient(90deg, #8b5cf6, #a78bfa); }
+        .hero-stat.uptime::before { background: linear-gradient(90deg, #0066cc, #3b82f6); }
+
+        .hero-stat-icon {
+            width: 48px;
+            height: 48px;
+            border-radius: var(--radius-lg);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-bottom: var(--spacing-lg);
+            background: rgba(255, 255, 255, 0.05);
+        }
+
+        .hero-stat.online .hero-stat-icon { color: #10b981; }
+        .hero-stat.vehicles .hero-stat-icon { color: #f59e0b; }
+        .hero-stat.connections .hero-stat-icon { color: #8b5cf6; }
+        .hero-stat.uptime .hero-stat-icon { color: #0066cc; }
+
+        .hero-stat-value {
+            font-size: 2.5rem;
+            font-weight: 700;
+            color: var(--color-text-primary);
+            line-height: 1;
+            margin-bottom: var(--spacing-xs);
+        }
+
+        .hero-stat-label {
+            font-size: 14px;
+            color: var(--color-text-secondary);
+            margin-bottom: var(--spacing-sm);
+        }
+
+        .hero-stat-meta {
+            font-size: 12px;
+            color: var(--color-text-tertiary);
+            display: flex;
+            align-items: center;
+            gap: var(--spacing-xs);
+        }
+
+        .hero-stat-meta.positive { color: var(--color-success); }
+        .hero-stat-meta.negative { color: var(--color-error); }
+
+        /* Main Grid Layout */
+        .dashboard-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr 380px;
+            grid-template-rows: auto auto;
+            gap: var(--spacing-lg);
+        }
+
+        /* Panel Styles */
+        .panel {
+            background: var(--color-bg-secondary);
+            border-radius: var(--radius-xl);
+            border: 1px solid var(--color-border);
+            overflow: hidden;
+        }
+
+        .panel-header {
             display: flex;
             justify-content: space-between;
             align-items: center;
-            margin-bottom: var(--spacing-6);
-            padding-bottom: var(--spacing-4);
+            padding: var(--spacing-lg) var(--spacing-xl);
             border-bottom: 1px solid var(--color-border);
+            background: rgba(255, 255, 255, 0.02);
         }
 
-        .dashboard-title {
+        .panel-title {
+            font-size: 15px;
+            font-weight: 600;
+            color: var(--color-text-primary);
             display: flex;
             align-items: center;
-            gap: var(--spacing-4);
+            gap: var(--spacing-sm);
         }
 
-        .dashboard-title h1 {
-            font-size: 1.75rem;
-            font-weight: 600;
+        .panel-title svg {
+            opacity: 0.7;
+        }
+
+        .panel-body {
+            padding: var(--spacing-xl);
+        }
+
+        .panel-body.no-padding {
+            padding: 0;
+        }
+
+        /* Chart Styles */
+        .chart-wrapper {
+            height: 220px;
+            position: relative;
+        }
+
+        /* Health Grid */
+        .health-grid {
+            display: grid;
+            gap: var(--spacing-sm);
+        }
+
+        .health-item {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: var(--spacing-md) var(--spacing-lg);
+            background: var(--color-bg-primary);
+            border-radius: var(--radius-md);
+            transition: background var(--transition-fast);
+        }
+
+        .health-item:hover {
+            background: var(--color-bg-tertiary);
+        }
+
+        .health-item-left {
+            display: flex;
+            align-items: center;
+            gap: var(--spacing-md);
+        }
+
+        .health-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: var(--color-text-tertiary);
+        }
+
+        .health-dot.healthy { background: var(--color-success); box-shadow: 0 0 8px var(--color-success); }
+        .health-dot.degraded { background: var(--color-warning); box-shadow: 0 0 8px var(--color-warning); }
+        .health-dot.unhealthy { background: var(--color-error); box-shadow: 0 0 8px var(--color-error); }
+
+        .health-name {
+            font-size: 14px;
             color: var(--color-text-primary);
         }
 
-        .dashboard-subtitle {
-            color: var(--color-text-muted);
-            font-size: 0.875rem;
-            margin-top: var(--spacing-1);
+        .health-badge {
+            font-size: 11px;
+            padding: var(--spacing-xs) var(--spacing-sm);
+            border-radius: var(--radius-full);
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
         }
 
-        .status-badge {
+        .health-badge.healthy { background: rgba(16, 185, 129, 0.15); color: var(--color-success); }
+        .health-badge.degraded { background: rgba(245, 158, 11, 0.15); color: var(--color-warning); }
+        .health-badge.unhealthy { background: rgba(239, 68, 68, 0.15); color: var(--color-error); }
+
+        /* Metrics List */
+        .metrics-grid {
+            display: grid;
+            gap: var(--spacing-md);
+        }
+
+        .metric-item {
             display: flex;
             align-items: center;
-            gap: var(--spacing-3);
-            padding: var(--spacing-3) var(--spacing-4);
-            background: var(--color-bg-secondary);
-            border-radius: var(--radius-lg);
-            border: 1px solid var(--color-border);
+            justify-content: space-between;
+            padding: var(--spacing-md) 0;
+            border-bottom: 1px solid var(--color-border-light);
         }
 
-        .status-badge .status-dot {
-            width: 12px;
-            height: 12px;
-            border-radius: 50%;
-            animation: pulse 2s infinite;
+        .metric-item:last-child {
+            border-bottom: none;
         }
 
-        .status-badge .status-dot.healthy {
-            background: var(--color-success);
-            box-shadow: 0 0 10px var(--color-success);
+        .metric-label {
+            font-size: 13px;
+            color: var(--color-text-secondary);
         }
 
-        .status-badge .status-dot.degraded {
-            background: var(--color-warning);
-            box-shadow: 0 0 10px var(--color-warning);
+        .metric-value {
+            font-size: 14px;
+            font-weight: 600;
+            color: var(--color-text-primary);
+            font-family: 'SF Mono', Monaco, monospace;
         }
 
-        .status-badge .status-dot.unhealthy {
-            background: var(--color-error);
-            box-shadow: 0 0 10px var(--color-error);
-        }
+        .metric-value.success { color: var(--color-success); }
+        .metric-value.warning { color: var(--color-warning); }
+        .metric-value.error { color: var(--color-error); }
 
-        @keyframes pulse {
-            0%, 100% { opacity: 1; }
-            50% { opacity: 0.5; }
-        }
-
-        .status-info {
+        /* Progress Bars */
+        .progress-metric {
             display: flex;
             flex-direction: column;
+            gap: var(--spacing-sm);
         }
 
-        .status-text {
-            font-weight: 600;
-            font-size: 0.875rem;
+        .progress-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .progress-track {
+            height: 6px;
+            background: var(--color-bg-tertiary);
+            border-radius: var(--radius-full);
+            overflow: hidden;
+        }
+
+        .progress-bar {
+            height: 100%;
+            border-radius: var(--radius-full);
+            transition: width 0.5s ease;
+            background: linear-gradient(90deg, var(--color-accent), #8b5cf6);
+        }
+
+        .progress-bar.success { background: linear-gradient(90deg, #10b981, #34d399); }
+        .progress-bar.warning { background: linear-gradient(90deg, #f59e0b, #fbbf24); }
+        .progress-bar.error { background: linear-gradient(90deg, #ef4444, #f87171); }
+
+        /* Database Section */
+        .db-stats {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: var(--spacing-md);
+            margin-bottom: var(--spacing-lg);
+        }
+
+        .db-stat-card {
+            background: var(--color-bg-primary);
+            border-radius: var(--radius-lg);
+            padding: var(--spacing-lg);
+            text-align: center;
+        }
+
+        .db-stat-value {
+            font-size: 1.75rem;
+            font-weight: 700;
             color: var(--color-text-primary);
+            font-family: 'SF Mono', Monaco, monospace;
         }
 
-        .status-time {
-            font-size: 0.75rem;
-            color: var(--color-text-muted);
+        .db-stat-label {
+            font-size: 11px;
+            color: var(--color-text-tertiary);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-top: var(--spacing-xs);
+        }
+
+        /* Alert Feed */
+        .alert-feed {
+            max-height: 280px;
+            overflow-y: auto;
+        }
+
+        .alert-item {
+            padding: var(--spacing-md) var(--spacing-lg);
+            border-bottom: 1px solid var(--color-border-light);
+            transition: background var(--transition-fast);
+        }
+
+        .alert-item:hover {
+            background: rgba(255, 255, 255, 0.02);
+        }
+
+        .alert-item:last-child {
+            border-bottom: none;
+        }
+
+        .alert-header {
             display: flex;
             align-items: center;
-            gap: var(--spacing-2);
+            gap: var(--spacing-sm);
+            margin-bottom: var(--spacing-xs);
         }
 
+        .alert-severity {
+            font-size: 10px;
+            padding: 2px 6px;
+            border-radius: var(--radius-sm);
+            font-weight: 700;
+            text-transform: uppercase;
+        }
+
+        .alert-severity.critical { background: var(--color-error); color: white; }
+        .alert-severity.warning { background: var(--color-warning); color: #1a1a1a; }
+        .alert-severity.info { background: var(--color-accent); color: white; }
+
+        .alert-time {
+            font-size: 11px;
+            color: var(--color-text-tertiary);
+        }
+
+        .alert-message {
+            font-size: 13px;
+            color: var(--color-text-secondary);
+            line-height: 1.4;
+        }
+
+        /* Empty State */
+        .empty-state {
+            padding: var(--spacing-2xl);
+            text-align: center;
+            color: var(--color-text-tertiary);
+        }
+
+        .empty-state svg {
+            opacity: 0.3;
+            margin-bottom: var(--spacing-md);
+        }
+
+        .empty-state p {
+            font-size: 13px;
+        }
+
+        /* Error Banner */
+        .error-banner {
+            background: linear-gradient(135deg, rgba(239, 68, 68, 0.1) 0%, rgba(239, 68, 68, 0.05) 100%);
+            border: 1px solid rgba(239, 68, 68, 0.3);
+            border-radius: var(--radius-lg);
+            padding: var(--spacing-lg);
+            margin-bottom: var(--spacing-xl);
+            display: flex;
+            align-items: center;
+            gap: var(--spacing-md);
+        }
+
+        .error-banner svg { color: var(--color-error); flex-shrink: 0; }
+        .error-banner strong { color: var(--color-error); }
+        .error-banner small { color: var(--color-text-secondary); }
+
+        /* Action Buttons */
+        .btn-danger {
+            background: linear-gradient(135deg, var(--color-error) 0%, #dc2626 100%);
+            border-color: transparent;
+            color: white;
+        }
+
+        .btn-danger:hover {
+            background: linear-gradient(135deg, #dc2626 0%, #b91c1c 100%);
+            border-color: transparent;
+        }
+
+        /* Responsive */
+        @media (max-width: 1400px) {
+            .dashboard-grid {
+                grid-template-columns: 1fr 1fr;
+            }
+            .dashboard-grid > *:nth-child(5),
+            .dashboard-grid > *:nth-child(6) {
+                grid-column: span 1;
+            }
+        }
+
+        @media (max-width: 1024px) {
+            .hero-stats {
+                grid-template-columns: repeat(2, 1fr);
+            }
+            .dashboard-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        @media (max-width: 640px) {
+            .hero-stats {
+                grid-template-columns: 1fr;
+            }
+            .hero-stat-value {
+                font-size: 2rem;
+            }
+        }
+
+        /* Spinner */
         .spinner {
-            width: 12px;
-            height: 12px;
+            width: 16px;
+            height: 16px;
             border: 2px solid var(--color-border);
             border-top-color: var(--color-accent);
             border-radius: 50%;
@@ -104,664 +432,229 @@
             to { transform: rotate(360deg); }
         }
 
-        /* Stats Grid */
-        .stats-overview {
-            display: grid;
-            grid-template-columns: repeat(4, 1fr);
-            gap: var(--spacing-4);
-            margin-bottom: var(--spacing-6);
-        }
-
-        .stat-card {
-            background: var(--color-bg-secondary);
-            border-radius: var(--radius-lg);
-            padding: var(--spacing-5);
-            border: 1px solid var(--color-border);
-            position: relative;
-            overflow: hidden;
-        }
-
-        .stat-card::before {
-            content: '';
-            position: absolute;
-            top: 0;
-            left: 0;
-            right: 0;
-            height: 3px;
-            background: var(--color-accent);
-        }
-
-        .stat-card.success::before {
-            background: var(--color-success);
-        }
-
-        .stat-card.warning::before {
-            background: var(--color-warning);
-        }
-
-        .stat-card.error::before {
-            background: var(--color-error);
-        }
-
-        .stat-card .stat-icon {
-            width: 40px;
-            height: 40px;
-            border-radius: var(--radius-md);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            margin-bottom: var(--spacing-3);
-            background: rgba(0, 102, 204, 0.1);
-            color: var(--color-accent);
-        }
-
-        .stat-card.success .stat-icon {
-            background: rgba(16, 185, 129, 0.1);
-            color: var(--color-success);
-        }
-
-        .stat-card.warning .stat-icon {
-            background: rgba(245, 158, 11, 0.1);
-            color: var(--color-warning);
-        }
-
-        .stat-card .stat-value {
-            font-size: 2rem;
-            font-weight: 700;
-            color: var(--color-text-primary);
-            margin-bottom: var(--spacing-1);
-        }
-
-        .stat-card .stat-label {
-            font-size: 0.875rem;
-            color: var(--color-text-muted);
-        }
-
-        .stat-card .stat-change {
-            font-size: 0.75rem;
-            margin-top: var(--spacing-2);
-            display: flex;
-            align-items: center;
-            gap: var(--spacing-1);
-        }
-
-        .stat-card .stat-change.up {
-            color: var(--color-success);
-        }
-
-        .stat-card .stat-change.down {
-            color: var(--color-error);
-        }
-
-        /* Dashboard Grid */
-        .dashboard-grid {
-            display: grid;
-            grid-template-columns: 2fr 1fr;
-            gap: var(--spacing-4);
-        }
-
-        .dashboard-grid .full-width {
-            grid-column: 1 / -1;
-        }
-
-        /* Card Styles */
-        .dashboard-card {
-            background: var(--color-bg-secondary);
-            border-radius: var(--radius-lg);
-            border: 1px solid var(--color-border);
-            overflow: hidden;
-        }
-
-        .card-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            padding: var(--spacing-4) var(--spacing-5);
-            border-bottom: 1px solid var(--color-border);
-        }
-
-        .card-header h2 {
-            font-size: 1rem;
-            font-weight: 600;
-            color: var(--color-text-primary);
-            display: flex;
-            align-items: center;
-            gap: var(--spacing-2);
-        }
-
-        .card-header .card-actions {
-            display: flex;
-            gap: var(--spacing-2);
-        }
-
-        .card-body {
-            padding: var(--spacing-5);
-        }
-
-        /* Chart Container */
-        .chart-container {
-            position: relative;
-            height: 250px;
-        }
-
-        /* Metrics List */
-        .metrics-list {
-            display: flex;
-            flex-direction: column;
-        }
-
-        .metric-row {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            padding: var(--spacing-3) 0;
-            border-bottom: 1px solid var(--color-border);
-        }
-
-        .metric-row:last-child {
-            border-bottom: none;
-        }
-
-        .metric-label {
-            color: var(--color-text-secondary);
-            font-size: 0.875rem;
-        }
-
-        .metric-value {
-            font-weight: 600;
-            color: var(--color-text-primary);
-        }
-
-        .metric-value.success { color: var(--color-success); }
-        .metric-value.warning { color: var(--color-warning); }
-        .metric-value.error { color: var(--color-error); }
-
-        /* Progress Bar */
-        .progress-container {
-            display: flex;
-            align-items: center;
-            gap: var(--spacing-3);
-        }
-
-        .progress-bar {
-            flex: 1;
-            height: 8px;
-            background: var(--color-bg-tertiary);
-            border-radius: var(--radius-full);
-            overflow: hidden;
-        }
-
-        .progress-fill {
-            height: 100%;
-            border-radius: var(--radius-full);
-            transition: width 0.3s ease;
-            background: linear-gradient(90deg, var(--color-accent), #8b5cf6);
-        }
-
-        .progress-fill.success {
-            background: linear-gradient(90deg, var(--color-success), #059669);
-        }
-
-        .progress-fill.warning {
-            background: linear-gradient(90deg, var(--color-warning), #d97706);
-        }
-
-        .progress-fill.error {
-            background: linear-gradient(90deg, var(--color-error), #dc2626);
-        }
-
-        .progress-text {
-            font-weight: 600;
-            min-width: 45px;
-            text-align: right;
-        }
-
-        /* Component Health List */
-        .component-list {
-            display: flex;
-            flex-direction: column;
-            gap: var(--spacing-2);
-        }
-
-        .component-item {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            padding: var(--spacing-3);
-            background: var(--color-bg-primary);
-            border-radius: var(--radius-md);
-            border-left: 3px solid var(--color-border);
-        }
-
-        .component-item.healthy {
-            border-left-color: var(--color-success);
-        }
-
-        .component-item.degraded {
-            border-left-color: var(--color-warning);
-        }
-
-        .component-item.unhealthy {
-            border-left-color: var(--color-error);
-        }
-
-        .component-name {
-            font-size: 0.875rem;
-            color: var(--color-text-primary);
-        }
-
-        .component-status {
-            font-size: 0.75rem;
-            padding: var(--spacing-1) var(--spacing-2);
+        /* Loading shimmer */
+        .loading-shimmer {
+            background: linear-gradient(90deg, var(--color-bg-tertiary) 25%, var(--color-bg-secondary) 50%, var(--color-bg-tertiary) 75%);
+            background-size: 200% 100%;
+            animation: shimmer 1.5s infinite;
             border-radius: var(--radius-sm);
-            font-weight: 600;
-            text-transform: uppercase;
         }
 
-        .component-status.healthy {
-            background: rgba(16, 185, 129, 0.15);
-            color: var(--color-success);
-        }
-
-        .component-status.degraded {
-            background: rgba(245, 158, 11, 0.15);
-            color: var(--color-warning);
-        }
-
-        .component-status.unhealthy {
-            background: rgba(239, 68, 68, 0.15);
-            color: var(--color-error);
-        }
-
-        /* Alert Items */
-        .alert-list {
-            display: flex;
-            flex-direction: column;
-            gap: var(--spacing-2);
-            max-height: 300px;
-            overflow-y: auto;
-        }
-
-        .alert-item {
-            padding: var(--spacing-3);
-            background: var(--color-bg-primary);
-            border-radius: var(--radius-md);
-            border-left: 3px solid var(--color-border);
-        }
-
-        .alert-item.critical {
-            border-left-color: var(--color-error);
-            background: rgba(239, 68, 68, 0.05);
-        }
-
-        .alert-item.warning {
-            border-left-color: var(--color-warning);
-            background: rgba(245, 158, 11, 0.05);
-        }
-
-        .alert-item.info {
-            border-left-color: var(--color-accent);
-        }
-
-        .alert-time {
-            font-size: 0.75rem;
-            color: var(--color-text-muted);
-            margin-bottom: var(--spacing-1);
-        }
-
-        .alert-message {
-            font-size: 0.875rem;
-            color: var(--color-text-primary);
-        }
-
-        .alert-severity {
-            font-weight: 600;
-            text-transform: uppercase;
-            font-size: 0.75rem;
-        }
-
-        .alert-severity.critical { color: var(--color-error); }
-        .alert-severity.warning { color: var(--color-warning); }
-        .alert-severity.info { color: var(--color-accent); }
-
-        /* Database Stats */
-        .db-stats-grid {
-            display: grid;
-            grid-template-columns: repeat(2, 1fr);
-            gap: var(--spacing-3);
-            margin-bottom: var(--spacing-4);
-        }
-
-        .db-stat-box {
-            text-align: center;
-            padding: var(--spacing-4);
-            background: var(--color-bg-primary);
-            border-radius: var(--radius-md);
-        }
-
-        .db-stat-box .value {
-            font-size: 1.75rem;
-            font-weight: 700;
-            color: var(--color-text-primary);
-        }
-
-        .db-stat-box .label {
-            font-size: 0.75rem;
-            color: var(--color-text-muted);
-            text-transform: uppercase;
-            margin-top: var(--spacing-1);
-        }
-
-        /* Error Message */
-        .error-banner {
-            background: rgba(239, 68, 68, 0.1);
-            border: 1px solid var(--color-error);
-            color: #fca5a5;
-            padding: var(--spacing-4);
-            border-radius: var(--radius-md);
-            margin-bottom: var(--spacing-4);
-            display: flex;
-            align-items: center;
-            gap: var(--spacing-3);
-        }
-
-        .error-banner svg {
-            flex-shrink: 0;
-        }
-
-        /* Empty State */
-        .empty-state {
-            text-align: center;
-            padding: var(--spacing-6);
-            color: var(--color-text-muted);
-        }
-
-        .empty-state svg {
-            margin-bottom: var(--spacing-3);
-            opacity: 0.5;
-        }
-
-        /* Responsive */
-        @media (max-width: 1200px) {
-            .stats-overview {
-                grid-template-columns: repeat(2, 1fr);
-            }
-
-            .dashboard-grid {
-                grid-template-columns: 1fr;
-            }
-        }
-
-        @media (max-width: 768px) {
-            .stats-overview {
-                grid-template-columns: 1fr;
-            }
-
-            .dashboard-header {
-                flex-direction: column;
-                align-items: flex-start;
-                gap: var(--spacing-4);
-            }
-
-            .db-stats-grid {
-                grid-template-columns: 1fr;
-            }
-        }
-
-        /* Danger Button */
-        .btn-danger {
-            background: var(--color-error);
-            color: white;
-        }
-
-        .btn-danger:hover {
-            background: #dc2626;
-        }
-
-        .btn-danger:disabled {
-            background: var(--color-text-muted);
-            cursor: not-allowed;
+        @keyframes shimmer {
+            0% { background-position: 200% 0; }
+            100% { background-position: -200% 0; }
         }
     </style>
 </head>
 <body>
-    <!-- Navigation -->
-    <nav class="nav">
-        <div class="nav-brand">
-            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <rect x="2" y="3" width="20" height="14" rx="2"/>
-                <circle cx="12" cy="10" r="3"/>
-                <path d="M7 21h10M12 17v4"/>
-            </svg>
-            <span>Taiwan CCTV Viewer</span>
-        </div>
-        <div class="nav-links">
-            <a href="index.html" class="nav-link">
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <rect x="3" y="3" width="7" height="7"/>
-                    <rect x="14" y="3" width="7" height="7"/>
-                    <rect x="3" y="14" width="7" height="7"/>
-                    <rect x="14" y="14" width="7" height="7"/>
-                </svg>
-                Grid View
-            </a>
-            <a href="map.html" class="nav-link">
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <polygon points="1 6 1 22 8 18 16 22 23 18 23 2 16 6 8 2 1 6"/>
-                    <line x1="8" y1="2" x2="8" y2="18"/>
-                    <line x1="16" y1="6" x2="16" y2="22"/>
-                </svg>
-                Map View
-            </a>
-            <a href="monitoring.html" class="nav-link active">
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <path d="M22 12h-4l-3 9L9 3l-3 9H2"/>
-                </svg>
-                Monitoring
-            </a>
-        </div>
-        <div id="connection-status" class="connection-status disconnected">
-            <span class="connection-dot"></span>
-            <span class="connection-text">Connecting...</span>
-        </div>
-    </nav>
-
-    <main class="container" style="max-width: 1600px;">
-        <!-- Dashboard Header -->
-        <div class="dashboard-header">
-            <div class="dashboard-title">
-                <div>
-                    <h1>Operational Dashboard</h1>
-                    <div class="dashboard-subtitle">Real-time system monitoring and health status</div>
+    <!-- Header -->
+    <div class="header">
+        <div class="header-top">
+            <div class="header-title">
+                <h1>System Monitor</h1>
+                <div class="header-actions">
+                    <a href="index.html" class="btn">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <rect x="3" y="3" width="7" height="7"/>
+                            <rect x="14" y="3" width="7" height="7"/>
+                            <rect x="3" y="14" width="7" height="7"/>
+                            <rect x="14" y="14" width="7" height="7"/>
+                        </svg>
+                        Grid
+                    </a>
+                    <a href="map.html" class="btn">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/>
+                            <circle cx="12" cy="10" r="3"/>
+                        </svg>
+                        Map
+                    </a>
                 </div>
             </div>
-            <div class="status-badge">
-                <div class="status-dot healthy" id="overall-status-dot"></div>
-                <div class="status-info">
-                    <span class="status-text" id="overall-status-text">Initializing...</span>
-                    <span class="status-time">
-                        <div class="spinner"></div>
-                        <span id="last-update">Loading...</span>
-                    </span>
-                </div>
+            <div id="connectionStatus" class="connection-status disconnected">
+                <span class="connection-dot"></span>
+                <span class="connection-text">Connecting...</span>
             </div>
         </div>
+        <div class="stats">
+            <div class="stat">
+                <span class="stat-label">Status</span>
+                <span class="stat-value" id="system-status">--</span>
+            </div>
+            <div class="stat">
+                <span class="stat-label">Updated</span>
+                <span class="stat-value" id="last-update">--</span>
+            </div>
+        </div>
+    </div>
 
-        <!-- Error Banner -->
+    <!-- Main Content -->
+    <main class="dashboard-container">
+        <!-- Error Container -->
         <div id="error-container"></div>
 
-        <!-- Stats Overview -->
-        <div class="stats-overview">
-            <div class="stat-card success">
-                <div class="stat-icon">
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <!-- Hero Stats -->
+        <div class="hero-stats">
+            <div class="hero-stat online">
+                <div class="hero-stat-icon">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         <rect x="2" y="3" width="20" height="14" rx="2"/>
-                        <circle cx="12" cy="10" r="2"/>
+                        <circle cx="12" cy="10" r="3"/>
+                        <path d="M7 21h10M12 17v4"/>
                     </svg>
                 </div>
-                <div class="stat-value" id="online-feeds-stat">--</div>
-                <div class="stat-label">Online Feeds</div>
-                <div class="stat-change up" id="feeds-change">
+                <div class="hero-stat-value" id="stat-online">--</div>
+                <div class="hero-stat-label">Online Feeds</div>
+                <div class="hero-stat-meta positive" id="stat-online-meta">
                     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         <polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/>
-                        <polyline points="17 6 23 6 23 12"/>
                     </svg>
-                    <span id="availability-stat">--% availability</span>
+                    <span>--% availability</span>
                 </div>
             </div>
-            <div class="stat-card warning">
-                <div class="stat-icon">
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <rect x="1" y="3" width="15" height="13" rx="2"/>
-                        <path d="M16 8h4a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2v-4"/>
+            <div class="hero-stat vehicles">
+                <div class="hero-stat-icon">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M5 17h14v-5H5v5zM17 9l-2-4H9L7 9"/>
+                        <circle cx="7.5" cy="17.5" r="1.5"/>
+                        <circle cx="16.5" cy="17.5" r="1.5"/>
                     </svg>
                 </div>
-                <div class="stat-value" id="vehicles-stat">--</div>
-                <div class="stat-label">Vehicles Detected</div>
-                <div class="stat-change" id="vehicles-change">
-                    <span>In active feeds</span>
-                </div>
+                <div class="hero-stat-value" id="stat-vehicles">--</div>
+                <div class="hero-stat-label">Vehicles Detected</div>
+                <div class="hero-stat-meta">Active detections</div>
             </div>
-            <div class="stat-card">
-                <div class="stat-icon">
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>
+            <div class="hero-stat connections">
+                <div class="hero-stat-icon">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M22 12h-4l-3 9L9 3l-3 9H2"/>
                     </svg>
                 </div>
-                <div class="stat-value" id="websocket-stat">--</div>
-                <div class="stat-label">Active Connections</div>
-                <div class="stat-change" id="websocket-change">
-                    <span>WebSocket clients</span>
-                </div>
+                <div class="hero-stat-value" id="stat-connections">--</div>
+                <div class="hero-stat-label">WebSocket Clients</div>
+                <div class="hero-stat-meta">Live connections</div>
             </div>
-            <div class="stat-card">
-                <div class="stat-icon">
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <div class="hero-stat uptime">
+                <div class="hero-stat-icon">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         <circle cx="12" cy="12" r="10"/>
                         <polyline points="12 6 12 12 16 14"/>
                     </svg>
                 </div>
-                <div class="stat-value" id="uptime-stat">--</div>
-                <div class="stat-label">Uptime</div>
-                <div class="stat-change" id="uptime-change">
-                    <span>Since last restart</span>
-                </div>
+                <div class="hero-stat-value" id="stat-uptime">--</div>
+                <div class="hero-stat-label">Uptime</div>
+                <div class="hero-stat-meta">Since last restart</div>
             </div>
         </div>
 
-        <!-- Main Dashboard Grid -->
+        <!-- Dashboard Grid -->
         <div class="dashboard-grid">
-            <!-- Feed Availability Chart -->
-            <div class="dashboard-card">
-                <div class="card-header">
-                    <h2>
-                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <!-- Feed Performance Chart -->
+            <div class="panel">
+                <div class="panel-header">
+                    <div class="panel-title">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                             <line x1="18" y1="20" x2="18" y2="10"/>
                             <line x1="12" y1="20" x2="12" y2="4"/>
                             <line x1="6" y1="20" x2="6" y2="14"/>
                         </svg>
-                        Feed Performance
-                    </h2>
-                    <div class="card-actions">
-                        <button class="btn btn-ghost btn-sm" onclick="toggleChartType()">
-                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                <path d="M21.21 15.89A10 10 0 1 1 8 2.83"/>
-                                <path d="M22 12A10 10 0 0 0 12 2v10z"/>
-                            </svg>
-                        </button>
+                        Feed Activity
                     </div>
+                    <button class="btn btn-sm" onclick="toggleChartType()">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M21.21 15.89A10 10 0 1 1 8 2.83"/>
+                            <path d="M22 12A10 10 0 0 0 12 2v10z"/>
+                        </svg>
+                    </button>
                 </div>
-                <div class="card-body">
-                    <div class="chart-container">
+                <div class="panel-body">
+                    <div class="chart-wrapper">
                         <canvas id="feedChart"></canvas>
                     </div>
                 </div>
             </div>
 
-            <!-- Component Health -->
-            <div class="dashboard-card">
-                <div class="card-header">
-                    <h2>
-                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <path d="M22 12h-4l-3 9L9 3l-3 9H2"/>
-                        </svg>
-                        Component Health
-                    </h2>
-                </div>
-                <div class="card-body">
-                    <div class="component-list" id="component-list">
-                        <div class="empty-state">
-                            <div class="spinner" style="width: 24px; height: 24px; margin: 0 auto;"></div>
-                            <p style="margin-top: var(--spacing-2);">Loading components...</p>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
             <!-- System Resources Chart -->
-            <div class="dashboard-card">
-                <div class="card-header">
-                    <h2>
-                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <div class="panel">
+                <div class="panel-header">
+                    <div class="panel-title">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                             <rect x="4" y="4" width="16" height="16" rx="2"/>
                             <rect x="9" y="9" width="6" height="6"/>
-                            <path d="M9 1v3M15 1v3M9 20v3M15 20v3M20 9h3M20 14h3M1 9h3M1 14h3"/>
                         </svg>
-                        System Resources
-                    </h2>
+                        Resource Usage
+                    </div>
                 </div>
-                <div class="card-body">
-                    <div class="chart-container">
+                <div class="panel-body">
+                    <div class="chart-wrapper">
                         <canvas id="resourceChart"></canvas>
                     </div>
                 </div>
             </div>
 
+            <!-- Component Health -->
+            <div class="panel">
+                <div class="panel-header">
+                    <div class="panel-title">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M22 12h-4l-3 9L9 3l-3 9H2"/>
+                        </svg>
+                        System Health
+                    </div>
+                </div>
+                <div class="panel-body">
+                    <div class="health-grid" id="health-grid">
+                        <div class="empty-state">
+                            <div class="spinner" style="margin: 0 auto;"></div>
+                            <p style="margin-top: var(--spacing-sm);">Loading...</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
             <!-- Performance Metrics -->
-            <div class="dashboard-card">
-                <div class="card-header">
-                    <h2>
-                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <path d="M12 20V10"/>
-                            <path d="M18 20V4"/>
-                            <path d="M6 20v-4"/>
+            <div class="panel">
+                <div class="panel-header">
+                    <div class="panel-title">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M12 20V10M18 20V4M6 20v-4"/>
                         </svg>
                         Performance
-                    </h2>
+                    </div>
                 </div>
-                <div class="card-body">
-                    <div class="metrics-list">
-                        <div class="metric-row">
-                            <span class="metric-label">CPU Usage</span>
-                            <div class="progress-container" style="flex: 1; max-width: 200px; margin-left: var(--spacing-4);">
-                                <div class="progress-bar">
-                                    <div class="progress-fill" id="cpu-progress" style="width: 0%"></div>
-                                </div>
-                                <span class="progress-text metric-value" id="cpu-usage">--%</span>
+                <div class="panel-body">
+                    <div class="metrics-grid">
+                        <div class="progress-metric">
+                            <div class="progress-header">
+                                <span class="metric-label">CPU</span>
+                                <span class="metric-value" id="cpu-value">--%</span>
+                            </div>
+                            <div class="progress-track">
+                                <div class="progress-bar" id="cpu-bar" style="width: 0%"></div>
                             </div>
                         </div>
-                        <div class="metric-row">
-                            <span class="metric-label">Memory Usage</span>
-                            <div class="progress-container" style="flex: 1; max-width: 200px; margin-left: var(--spacing-4);">
-                                <div class="progress-bar">
-                                    <div class="progress-fill" id="memory-progress" style="width: 0%"></div>
-                                </div>
-                                <span class="progress-text metric-value" id="memory-usage">--%</span>
+                        <div class="progress-metric">
+                            <div class="progress-header">
+                                <span class="metric-label">Memory</span>
+                                <span class="metric-value" id="memory-value">--%</span>
+                            </div>
+                            <div class="progress-track">
+                                <div class="progress-bar" id="memory-bar" style="width: 0%"></div>
                             </div>
                         </div>
-                        <div class="metric-row">
+                        <div class="metric-item">
                             <span class="metric-label">Process Memory</span>
                             <span class="metric-value" id="process-memory">-- MB</span>
                         </div>
-                        <div class="metric-row">
+                        <div class="metric-item">
                             <span class="metric-label">Cache Size</span>
                             <span class="metric-value" id="cache-size">-- MB</span>
                         </div>
-                        <div class="metric-row">
+                        <div class="metric-item">
                             <span class="metric-label">Cached Items</span>
                             <span class="metric-value" id="cache-items">--</span>
                         </div>
-                        <div class="metric-row">
+                        <div class="metric-item">
                             <span class="metric-label">Circuit Breaker</span>
                             <span class="metric-value success" id="circuit-breaker">CLOSED</span>
                         </div>
@@ -769,37 +662,32 @@
                 </div>
             </div>
 
-            <!-- Database Stats -->
-            <div class="dashboard-card">
-                <div class="card-header">
-                    <h2>
-                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <!-- Database -->
+            <div class="panel">
+                <div class="panel-header">
+                    <div class="panel-title">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                             <ellipse cx="12" cy="5" rx="9" ry="3"/>
                             <path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/>
                             <path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/>
                         </svg>
                         Database
-                    </h2>
+                    </div>
+                    <span class="metric-value success" id="db-status">Connected</span>
                 </div>
-                <div class="card-body">
-                    <div class="db-stats-grid">
-                        <div class="db-stat-box">
-                            <div class="value" id="db-detections">--</div>
-                            <div class="label">Detections</div>
+                <div class="panel-body">
+                    <div class="db-stats">
+                        <div class="db-stat-card">
+                            <div class="db-stat-value" id="db-detections">--</div>
+                            <div class="db-stat-label">Detections</div>
                         </div>
-                        <div class="db-stat-box">
-                            <div class="value" id="db-tracks">--</div>
-                            <div class="label">Tracks</div>
-                        </div>
-                    </div>
-                    <div class="metrics-list">
-                        <div class="metric-row">
-                            <span class="metric-label">Status</span>
-                            <span class="metric-value success" id="db-status">Connected</span>
+                        <div class="db-stat-card">
+                            <div class="db-stat-value" id="db-tracks">--</div>
+                            <div class="db-stat-label">Tracks</div>
                         </div>
                     </div>
-                    <button class="btn btn-danger" style="width: 100%; margin-top: var(--spacing-4);" onclick="resetDatabase()" id="reset-db-btn">
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <button class="btn btn-danger" style="width: 100%;" onclick="resetDatabase()" id="reset-db-btn">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                             <polyline points="1 4 1 10 7 10"/>
                             <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/>
                         </svg>
@@ -808,22 +696,22 @@
                 </div>
             </div>
 
-            <!-- Recent Alerts -->
-            <div class="dashboard-card">
-                <div class="card-header">
-                    <h2>
-                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <!-- Alerts -->
+            <div class="panel">
+                <div class="panel-header">
+                    <div class="panel-title">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                             <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/>
                             <path d="M13.73 21a2 2 0 0 1-3.46 0"/>
                         </svg>
                         Recent Alerts
-                    </h2>
-                    <span class="badge" id="alert-count">0</span>
+                    </div>
+                    <span class="health-badge healthy" id="alert-count">0</span>
                 </div>
-                <div class="card-body">
-                    <div class="alert-list" id="alerts-container">
+                <div class="panel-body no-padding">
+                    <div class="alert-feed" id="alert-feed">
                         <div class="empty-state">
-                            <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1">
+                            <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
                                 <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/>
                                 <path d="M13.73 21a2 2 0 0 1-3.46 0"/>
                             </svg>
@@ -837,35 +725,48 @@
 
     <script src="scripts/utils.js"></script>
     <script>
-        const API_BASE = 'http://localhost:8001';
+        const hostname = window.location.hostname;
+        const API_BASE = `http://${hostname}:8001`;
         let updateInterval;
         let feedChart = null;
         let resourceChart = null;
         let chartType = 'bar';
 
-        // Historical data for charts
         const historyLength = 20;
         const cpuHistory = [];
         const memoryHistory = [];
         const feedHistory = { online: [], offline: [], timestamps: [] };
 
-        // Initialize
         document.addEventListener('DOMContentLoaded', () => {
-            ConnectionStatus.init('connection-status');
+            ConnectionStatus.init('connectionStatus');
             initCharts();
             updateDashboard();
             updateInterval = setInterval(updateDashboard, 5000);
         });
 
-        // Cleanup
         window.addEventListener('beforeunload', () => {
             if (updateInterval) clearInterval(updateInterval);
         });
 
         function initCharts() {
-            // Feed Performance Chart
-            const feedCtx = document.getElementById('feedChart').getContext('2d');
-            feedChart = new Chart(feedCtx, {
+            const chartDefaults = {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: {
+                        position: 'top',
+                        align: 'end',
+                        labels: {
+                            color: '#888',
+                            font: { size: 11 },
+                            boxWidth: 12,
+                            padding: 15
+                        }
+                    }
+                }
+            };
+
+            feedChart = new Chart(document.getElementById('feedChart').getContext('2d'), {
                 type: 'bar',
                 data: {
                     labels: [],
@@ -873,92 +774,78 @@
                         {
                             label: 'Online',
                             data: [],
-                            backgroundColor: 'rgba(16, 185, 129, 0.8)',
+                            backgroundColor: 'rgba(16, 185, 129, 0.7)',
                             borderColor: '#10b981',
-                            borderWidth: 1
+                            borderWidth: 0,
+                            borderRadius: 4
                         },
                         {
                             label: 'Offline',
                             data: [],
-                            backgroundColor: 'rgba(239, 68, 68, 0.8)',
+                            backgroundColor: 'rgba(239, 68, 68, 0.7)',
                             borderColor: '#ef4444',
-                            borderWidth: 1
+                            borderWidth: 0,
+                            borderRadius: 4
                         }
                     ]
                 },
                 options: {
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    plugins: {
-                        legend: {
-                            position: 'top',
-                            labels: { color: '#94a3b8', font: { size: 11 } }
-                        }
-                    },
+                    ...chartDefaults,
                     scales: {
                         x: {
                             stacked: true,
-                            grid: { color: 'rgba(148, 163, 184, 0.1)' },
-                            ticks: { color: '#94a3b8', font: { size: 10 } }
+                            grid: { display: false },
+                            ticks: { color: '#666', font: { size: 10 }, maxRotation: 0 }
                         },
                         y: {
                             stacked: true,
                             beginAtZero: true,
-                            grid: { color: 'rgba(148, 163, 184, 0.1)' },
-                            ticks: { color: '#94a3b8', font: { size: 10 } }
+                            grid: { color: 'rgba(255,255,255,0.05)' },
+                            ticks: { color: '#666', font: { size: 10 } }
                         }
                     }
                 }
             });
 
-            // Resource Usage Chart
-            const resourceCtx = document.getElementById('resourceChart').getContext('2d');
-            resourceChart = new Chart(resourceCtx, {
+            resourceChart = new Chart(document.getElementById('resourceChart').getContext('2d'), {
                 type: 'line',
                 data: {
                     labels: [],
                     datasets: [
                         {
-                            label: 'CPU %',
+                            label: 'CPU',
                             data: [],
                             borderColor: '#0066cc',
                             backgroundColor: 'rgba(0, 102, 204, 0.1)',
                             fill: true,
-                            tension: 0.4
+                            tension: 0.4,
+                            borderWidth: 2,
+                            pointRadius: 0
                         },
                         {
-                            label: 'Memory %',
+                            label: 'Memory',
                             data: [],
                             borderColor: '#8b5cf6',
                             backgroundColor: 'rgba(139, 92, 246, 0.1)',
                             fill: true,
-                            tension: 0.4
+                            tension: 0.4,
+                            borderWidth: 2,
+                            pointRadius: 0
                         }
                     ]
                 },
                 options: {
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    plugins: {
-                        legend: {
-                            position: 'top',
-                            labels: { color: '#94a3b8', font: { size: 11 } }
-                        }
-                    },
+                    ...chartDefaults,
                     scales: {
                         x: {
-                            grid: { color: 'rgba(148, 163, 184, 0.1)' },
-                            ticks: { color: '#94a3b8', font: { size: 10 }, maxRotation: 0 }
+                            grid: { display: false },
+                            ticks: { color: '#666', font: { size: 10 }, maxRotation: 0 }
                         },
                         y: {
                             beginAtZero: true,
                             max: 100,
-                            grid: { color: 'rgba(148, 163, 184, 0.1)' },
-                            ticks: {
-                                color: '#94a3b8',
-                                font: { size: 10 },
-                                callback: value => value + '%'
-                            }
+                            grid: { color: 'rgba(255,255,255,0.05)' },
+                            ticks: { color: '#666', font: { size: 10 }, callback: v => v + '%' }
                         }
                     }
                 }
@@ -971,136 +858,118 @@
             feedChart.update();
         }
 
-        async function fetchHealthData() {
-            const response = await fetch(`${API_BASE}/health`);
-            return await response.json();
-        }
-
-        async function fetchOperationalStatus() {
-            const response = await fetch(`${API_BASE}/api/operational/status`);
-            return await response.json();
-        }
-
         async function updateDashboard() {
             try {
                 ConnectionStatus.setStatus('connecting');
 
                 const [health, status] = await Promise.all([
-                    fetchHealthData(),
-                    fetchOperationalStatus()
+                    fetch(`${API_BASE}/health`).then(r => r.json()),
+                    fetch(`${API_BASE}/api/operational/status`).then(r => r.json())
                 ]);
 
                 ConnectionStatus.setStatus('connected');
-                ConnectionStatus.updateLastSeen();
                 clearError();
 
-                updateOverallStatus(health.status);
-                updateStatsOverview(health, status);
-                updateSystemMetrics(health);
-                updateComponents(health.components);
-                updatePerformanceMetrics(status);
-                updateDatabaseStats(status);
-                updateCharts(health, status);
+                // Update status
+                document.getElementById('system-status').textContent =
+                    (health.status || 'unknown').charAt(0).toUpperCase() + (health.status || 'unknown').slice(1);
+                document.getElementById('last-update').textContent = new Date().toLocaleTimeString();
 
+                // Hero stats
+                if (status.feeds) {
+                    document.getElementById('stat-online').textContent = status.feeds.online.toLocaleString();
+                    document.getElementById('stat-online-meta').querySelector('span').textContent =
+                        `${status.feeds.online_percentage}% availability`;
+                    document.getElementById('stat-vehicles').textContent = status.feeds.with_vehicles.toLocaleString();
+                }
+                if (status.websocket) {
+                    document.getElementById('stat-connections').textContent = status.websocket.active_connections;
+                }
+                document.getElementById('stat-uptime').textContent = status.uptime_human || '--';
+
+                // System metrics
+                if (health.system) {
+                    const cpu = health.system.cpu_percent;
+                    const mem = health.system.memory.percent;
+
+                    document.getElementById('cpu-value').textContent = `${cpu}%`;
+                    document.getElementById('cpu-bar').style.width = `${cpu}%`;
+                    updateBarColor('cpu-bar', cpu);
+
+                    document.getElementById('memory-value').textContent = `${mem}%`;
+                    document.getElementById('memory-bar').style.width = `${mem}%`;
+                    updateBarColor('memory-bar', mem);
+
+                    document.getElementById('process-memory').textContent =
+                        `${health.system.python_process.memory_mb} MB`;
+
+                    cpuHistory.push(cpu);
+                    memoryHistory.push(mem);
+                    if (cpuHistory.length > historyLength) {
+                        cpuHistory.shift();
+                        memoryHistory.shift();
+                    }
+                }
+
+                // Cache
+                if (status.cache) {
+                    document.getElementById('cache-size').textContent = `${status.cache.size_mb} MB`;
+                    document.getElementById('cache-items').textContent = status.cache.items.toLocaleString();
+                }
+
+                // Circuit breaker
+                if (status.circuit_breakers?.feed_fetcher) {
+                    const state = status.circuit_breakers.feed_fetcher.state;
+                    const el = document.getElementById('circuit-breaker');
+                    el.textContent = state.toUpperCase();
+                    el.className = 'metric-value ' + (state === 'closed' ? 'success' : state === 'half_open' ? 'warning' : 'error');
+                }
+
+                // Components
+                updateComponents(health.components);
+
+                // Database
+                if (status.database && !status.database.error) {
+                    document.getElementById('db-detections').textContent =
+                        status.database.detections_count?.toLocaleString() || '--';
+                    document.getElementById('db-tracks').textContent =
+                        status.database.tracks_count?.toLocaleString() || '--';
+                    document.getElementById('db-status').textContent = 'Connected';
+                    document.getElementById('db-status').className = 'metric-value success';
+                } else {
+                    document.getElementById('db-status').textContent = 'Error';
+                    document.getElementById('db-status').className = 'metric-value error';
+                }
+
+                // Charts
+                updateCharts(status);
+
+                // Alerts
                 if (status.alerts?.recent) {
                     updateAlerts(status.alerts.recent);
                 }
 
-                const now = new Date();
-                document.getElementById('last-update').textContent = `Updated ${now.toLocaleTimeString()}`;
-
             } catch (error) {
-                console.error('Dashboard update error:', error);
+                console.error('Dashboard error:', error);
                 ConnectionStatus.setStatus('disconnected');
-                showError('Unable to connect to API server. Make sure the backend is running.');
+                showError('Unable to connect to API server.');
             }
         }
 
-        function updateOverallStatus(status) {
-            const dot = document.getElementById('overall-status-dot');
-            const text = document.getElementById('overall-status-text');
-
-            dot.className = `status-dot ${status}`;
-            text.textContent = status.charAt(0).toUpperCase() + status.slice(1);
-        }
-
-        function updateStatsOverview(health, status) {
-            if (status.feeds) {
-                document.getElementById('online-feeds-stat').textContent =
-                    status.feeds.online.toLocaleString();
-                document.getElementById('availability-stat').textContent =
-                    `${status.feeds.online_percentage}% availability`;
-                document.getElementById('vehicles-stat').textContent =
-                    status.feeds.with_vehicles.toLocaleString();
-            }
-
-            if (status.websocket) {
-                document.getElementById('websocket-stat').textContent =
-                    status.websocket.active_connections.toLocaleString();
-            }
-
-            document.getElementById('uptime-stat').textContent = status.uptime_human || '--';
-        }
-
-        function updateSystemMetrics(health) {
-            if (health.system) {
-                const cpuPercent = health.system.cpu_percent;
-                const memoryPercent = health.system.memory.percent;
-
-                document.getElementById('cpu-usage').textContent = `${cpuPercent}%`;
-                document.getElementById('cpu-progress').style.width = `${cpuPercent}%`;
-                updateProgressColor('cpu-progress', cpuPercent);
-
-                document.getElementById('memory-usage').textContent = `${memoryPercent}%`;
-                document.getElementById('memory-progress').style.width = `${memoryPercent}%`;
-                updateProgressColor('memory-progress', memoryPercent);
-
-                document.getElementById('process-memory').textContent =
-                    `${health.system.python_process.memory_mb} MB`;
-
-                // Update history for charts
-                const timestamp = new Date().toLocaleTimeString('en-US', {
-                    hour12: false,
-                    hour: '2-digit',
-                    minute: '2-digit'
-                });
-
-                cpuHistory.push(cpuPercent);
-                memoryHistory.push(memoryPercent);
-
-                if (cpuHistory.length > historyLength) {
-                    cpuHistory.shift();
-                    memoryHistory.shift();
-                }
-            }
-        }
-
-        function updateProgressColor(elementId, percent) {
-            const element = document.getElementById(elementId);
-            element.classList.remove('success', 'warning', 'error');
-
-            if (percent < 60) {
-                element.classList.add('success');
-            } else if (percent < 80) {
-                element.classList.add('warning');
-            } else {
-                element.classList.add('error');
-            }
+        function updateBarColor(id, percent) {
+            const el = document.getElementById(id);
+            el.classList.remove('success', 'warning', 'error');
+            el.classList.add(percent < 60 ? 'success' : percent < 80 ? 'warning' : 'error');
         }
 
         function updateComponents(components) {
-            const container = document.getElementById('component-list');
-
-            if (!components || components.length === 0) {
-                container.innerHTML = `
-                    <div class="empty-state">
-                        <p>No components found</p>
-                    </div>
-                `;
+            const container = document.getElementById('health-grid');
+            if (!components?.length) {
+                container.innerHTML = '<div class="empty-state"><p>No components</p></div>';
                 return;
             }
 
-            const componentNames = {
+            const names = {
                 'database': 'Database',
                 'yolo_model': 'YOLO Model',
                 'http_client': 'HTTP Client',
@@ -1110,59 +979,24 @@
                 'feed_source': 'Feed Source'
             };
 
-            container.innerHTML = components.map(comp => `
-                <div class="component-item ${comp.status}">
-                    <span class="component-name">${componentNames[comp.component] || comp.component}</span>
-                    <span class="component-status ${comp.status}">${comp.status}</span>
+            container.innerHTML = components.map(c => `
+                <div class="health-item">
+                    <div class="health-item-left">
+                        <div class="health-dot ${c.status}"></div>
+                        <span class="health-name">${names[c.component] || c.component}</span>
+                    </div>
+                    <span class="health-badge ${c.status}">${c.status}</span>
                 </div>
             `).join('');
         }
 
-        function updatePerformanceMetrics(status) {
-            if (status.cache) {
-                document.getElementById('cache-size').textContent = `${status.cache.size_mb} MB`;
-                document.getElementById('cache-items').textContent = status.cache.items.toLocaleString();
-            }
+        function updateCharts(status) {
+            const ts = new Date().toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit' });
 
-            if (status.circuit_breakers?.feed_fetcher) {
-                const state = status.circuit_breakers.feed_fetcher.state;
-                const element = document.getElementById('circuit-breaker');
-                element.textContent = state.toUpperCase();
-                element.className = 'metric-value';
-
-                if (state === 'closed') element.classList.add('success');
-                else if (state === 'half_open') element.classList.add('warning');
-                else element.classList.add('error');
-            }
-        }
-
-        function updateDatabaseStats(status) {
-            if (status.database && !status.database.error) {
-                document.getElementById('db-detections').textContent =
-                    status.database.detections_count?.toLocaleString() || '--';
-                document.getElementById('db-tracks').textContent =
-                    status.database.tracks_count?.toLocaleString() || '--';
-                document.getElementById('db-status').textContent = 'Connected';
-                document.getElementById('db-status').className = 'metric-value success';
-            } else {
-                document.getElementById('db-status').textContent = 'Error';
-                document.getElementById('db-status').className = 'metric-value error';
-            }
-        }
-
-        function updateCharts(health, status) {
-            const timestamp = new Date().toLocaleTimeString('en-US', {
-                hour12: false,
-                hour: '2-digit',
-                minute: '2-digit',
-                second: '2-digit'
-            });
-
-            // Update feed history
             if (status.feeds) {
                 feedHistory.online.push(status.feeds.online);
                 feedHistory.offline.push(status.feeds.total - status.feeds.online);
-                feedHistory.timestamps.push(timestamp);
+                feedHistory.timestamps.push(ts);
 
                 if (feedHistory.timestamps.length > historyLength) {
                     feedHistory.online.shift();
@@ -1176,10 +1010,9 @@
                 feedChart.update('none');
             }
 
-            // Update resource chart
-            const labels = Array.from({ length: cpuHistory.length }, (_, i) => {
-                const secondsAgo = (cpuHistory.length - 1 - i) * 5;
-                return secondsAgo === 0 ? 'now' : `-${secondsAgo}s`;
+            const labels = cpuHistory.map((_, i) => {
+                const ago = (cpuHistory.length - 1 - i) * 5;
+                return ago === 0 ? 'now' : `-${ago}s`;
             });
 
             resourceChart.data.labels = labels;
@@ -1189,15 +1022,16 @@
         }
 
         function updateAlerts(alerts) {
-            const container = document.getElementById('alerts-container');
-            const countBadge = document.getElementById('alert-count');
+            const container = document.getElementById('alert-feed');
+            const badge = document.getElementById('alert-count');
 
-            countBadge.textContent = alerts.length;
+            badge.textContent = alerts.length;
+            badge.className = 'health-badge ' + (alerts.length === 0 ? 'healthy' : 'warning');
 
-            if (!alerts || alerts.length === 0) {
+            if (!alerts.length) {
                 container.innerHTML = `
                     <div class="empty-state">
-                        <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1">
+                        <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
                             <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/>
                             <path d="M13.73 21a2 2 0 0 1-3.46 0"/>
                         </svg>
@@ -1207,18 +1041,15 @@
                 return;
             }
 
-            container.innerHTML = alerts.slice(0, 10).map(alert => {
-                const time = Format.timeAgo(alert.timestamp);
-                return `
-                    <div class="alert-item ${alert.severity}">
-                        <div class="alert-time">${time}</div>
-                        <div class="alert-message">
-                            <span class="alert-severity ${alert.severity}">[${alert.severity}]</span>
-                            ${alert.message}
-                        </div>
+            container.innerHTML = alerts.slice(0, 10).map(a => `
+                <div class="alert-item">
+                    <div class="alert-header">
+                        <span class="alert-severity ${a.severity}">${a.severity}</span>
+                        <span class="alert-time">${Format.timeAgo(a.timestamp)}</span>
                     </div>
-                `;
-            }).join('');
+                    <div class="alert-message">${a.message}</div>
+                </div>
+            `).join('');
         }
 
         function showError(message) {
@@ -1230,8 +1061,8 @@
                         <line x1="12" y1="16" x2="12.01" y2="16"/>
                     </svg>
                     <div>
-                        <strong>Connection Error:</strong> ${message}
-                        <br><small>Retrying in 5 seconds...</small>
+                        <strong>Connection Error</strong><br>
+                        <small>${message} Retrying...</small>
                     </div>
                 </div>
             `;
@@ -1242,37 +1073,28 @@
         }
 
         async function resetDatabase() {
-            if (!confirm('Are you sure you want to reset the database? This will delete all detections and vehicle tracks. This action cannot be undone.')) {
-                return;
-            }
+            if (!confirm('Reset database? This deletes all detections and tracks.')) return;
 
-            const button = document.getElementById('reset-db-btn');
-            button.disabled = true;
-            button.innerHTML = `
-                <div class="spinner" style="width: 16px; height: 16px;"></div>
-                Resetting...
-            `;
+            const btn = document.getElementById('reset-db-btn');
+            btn.disabled = true;
+            btn.innerHTML = '<div class="spinner"></div> Resetting...';
 
             try {
-                const response = await fetch(`${API_BASE}/api/database/reset`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' }
-                });
+                const res = await fetch(`${API_BASE}/api/database/reset`, { method: 'POST' });
+                const data = await res.json();
 
-                const result = await response.json();
-
-                if (response.ok) {
-                    Toast.success('Database reset successfully! All detections and vehicle tracks have been cleared.');
+                if (res.ok) {
+                    Toast.success('Database reset successfully!');
                     updateDashboard();
                 } else {
-                    Toast.error(`Database reset failed: ${result.detail || 'Unknown error'}`);
+                    Toast.error(`Reset failed: ${data.detail || 'Unknown error'}`);
                 }
-            } catch (error) {
-                Toast.error(`Database reset error: ${error.message}`);
+            } catch (e) {
+                Toast.error(`Error: ${e.message}`);
             } finally {
-                button.disabled = false;
-                button.innerHTML = `
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                btn.disabled = false;
+                btn.innerHTML = `
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         <polyline points="1 4 1 10 7 10"/>
                         <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/>
                     </svg>
@@ -1281,12 +1103,11 @@
             }
         }
 
-        // Keyboard shortcuts
-        document.addEventListener('keydown', (e) => {
-            if (e.key === 'r' && !e.ctrlKey && !e.metaKey) {
+        document.addEventListener('keydown', e => {
+            if (e.key === 'r' && !e.ctrlKey && !e.metaKey && document.activeElement.tagName !== 'INPUT') {
                 e.preventDefault();
                 updateDashboard();
-                Toast.info('Dashboard refreshed');
+                Toast.info('Refreshed');
             }
         });
     </script>
