@@ -465,6 +465,61 @@ def initialize_lattice_client(env_token: str, sandbox_token: str = None, base_ur
         lattice_client = None
 
 
+def send_chatsurfer_message(feed: Dict, stream_cfg, annotated_image: bytes = None):
+    """Send detection message to ChatSurfer with snapshot URL"""
+    import requests
+
+    url = "https://chatsurfer.nro.mil/api/chatserver/message"
+    headers = {
+        "cookie": f"SESSION={stream_cfg.chatsurferSession}",
+        "Content-Type": "application/json"
+    }
+
+    # Build message content
+    message_parts = ["[VEHICLE DETECTION]"]
+
+    if feed.get('roadName'):
+        message_parts.append(f"Road: {feed['roadName']}")
+    if feed.get('locationMile'):
+        message_parts.append(f"Location: {feed['locationMile']}")
+
+    message_parts.append(f"Camera: {feed['id']}")
+
+    if feed.get('lat') and feed.get('lon'):
+        message_parts.append(f"Coords: {feed['lat']}, {feed['lon']}")
+
+    # Add timestamp
+    timestamp = datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S UTC')
+    message_parts.append(f"Time: {timestamp}")
+
+    # Add snapshot URL
+    try:
+        server_ip = socket.gethostbyname(socket.gethostname())
+    except:
+        server_ip = "localhost"
+    feed_id = feed['id']
+    message_parts.append(f"Snapshot: http://{server_ip}:8001/api/feeds/{feed_id}/snapshot")
+
+    message = "\n".join(message_parts)
+
+    payload = {
+        "classification": "UNCLASSIFIED//FOUO",
+        "message": message,
+        "domainId": stream_cfg.chatsurferDomain,
+        "nickName": stream_cfg.chatsurferNickname,
+        "roomName": stream_cfg.chatsurferRoom
+    }
+
+    try:
+        response = requests.post(url, headers=headers, json=payload, verify=False, timeout=10)
+        if response.status_code == 204:
+            print(f"✓ ChatSurfer message sent for feed {feed['id']}")
+        else:
+            print(f"✗ ChatSurfer error: {response.status_code} - {response.text}")
+    except Exception as e:
+        print(f"✗ Error sending ChatSurfer message: {e}")
+
+
 async def fetch_feed_list():
     """Fetch and parse the XML feed list from Taiwan Highway Bureau"""
     url = 'https://cctv-maintain.thb.gov.tw/opendataCCTVs.xml'
@@ -797,6 +852,8 @@ async def update_feed_cache_worker():
                                             send_cot_udp(cot_msg, stream_cfg.ip, stream_cfg.port)
                                         elif stream_cfg.format == "lattice":
                                             publish_lattice_entity(feed_info, stream_cfg.latticeIntegration, annotated_img)
+                                        elif stream_cfg.format == "chatsurfer":
+                                            send_chatsurfer_message(feed_info, stream_cfg, annotated_img)
                                     except Exception as e:
                                         logger.error(f"Error streaming {stream_cfg.format}", feed_id=feed_id, error=str(e))
                         else:
@@ -1537,7 +1594,11 @@ async def set_stream_config(config: StreamConfigRequest):
         latticeToken=config.latticeToken or "",
         latticeSandboxToken=config.latticeSandboxToken or "",
         latticeIntegration=config.latticeIntegration or "taiwan-cctv",
-        latticeUrl=config.latticeUrl or ""
+        latticeUrl=config.latticeUrl or "",
+        chatsurferSession=config.chatsurferSession or "",
+        chatsurferRoom=config.chatsurferRoom or "",
+        chatsurferNickname=config.chatsurferNickname or "CCTV_Bot",
+        chatsurferDomain=config.chatsurferDomain or "chatsurferxmppunclass"
     )
 
     # Initialize Lattice client if token provided and format is lattice
@@ -1553,6 +1614,8 @@ async def set_stream_config(config: StreamConfigRequest):
         logger.info(f"Stream Out {status}: CoT", ip=config.ip, port=config.port)
     elif config.format == "lattice":
         logger.info(f"Stream Out {status}: Lattice", integration=config.latticeIntegration, url=config.latticeUrl or 'default')
+    elif config.format == "chatsurfer":
+        logger.info(f"Stream Out {status}: ChatSurfer", room=config.chatsurferRoom, nickname=config.chatsurferNickname)
 
     return {"status": "success", "config": updated_config.to_dict()}
 

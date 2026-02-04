@@ -208,6 +208,7 @@
                     <select id="streamFormat" class="config-input">
                         <option value="cot">CoT (Cursor on Target)</option>
                         <option value="lattice">Lattice (Anduril)</option>
+                        <option value="chatsurfer">ChatSurfer</option>
                         <option value="json" disabled>JSON (Coming Soon)</option>
                     </select>
                 </div>
@@ -244,6 +245,27 @@
                     <input type="text" id="latticeIntegration" class="config-input" placeholder="taiwan-cctv" value="taiwan-cctv">
                 </div>
 
+                <div class="config-row chatsurfer-fields hidden">
+                    <label for="chatsurferSession">Session Cookie:</label>
+                    <input type="password" id="chatsurferSession" class="config-input" placeholder="SESSION cookie value from browser">
+                    <small class="text-muted" style="font-size: 12px; display: block; margin-top: 4px;">DevTools (F12) → Application → Cookies → SESSION</small>
+                </div>
+
+                <div class="config-row chatsurfer-fields hidden">
+                    <label for="chatsurferRoom">Room Name:</label>
+                    <input type="text" id="chatsurferRoom" class="config-input" placeholder="e.g., bf25_boat">
+                </div>
+
+                <div class="config-row chatsurfer-fields hidden">
+                    <label for="chatsurferNickname">Bot Nickname:</label>
+                    <input type="text" id="chatsurferNickname" class="config-input" placeholder="CCTV_Bot" value="CCTV_Bot">
+                </div>
+
+                <div class="config-row chatsurfer-fields hidden">
+                    <label for="chatsurferDomain">Domain ID:</label>
+                    <input type="text" id="chatsurferDomain" class="config-input" placeholder="chatsurferxmppunclass" value="chatsurferxmppunclass">
+                </div>
+
                 <div class="config-row">
                     <button class="btn btn-primary btn-block" id="saveStreamConfig">Apply Configuration</button>
                 </div>
@@ -272,6 +294,22 @@
                         <li><strong>Sandbox Token:</strong> Create in Account & Security - Bearer tokens</li>
                         <li>Both tokens required for Sandbox environments</li>
                         <li>Production only needs Environment Token</li>
+                    </ul>
+                </div>
+
+                <div class="stream-info chatsurfer-info hidden">
+                    <p><strong>ChatSurfer Settings:</strong></p>
+                    <ul>
+                        <li>Protocol: HTTPS REST API</li>
+                        <li>Classification: UNCLASSIFIED//FOUO</li>
+                        <li>Updates: Real-time on vehicle detection</li>
+                        <li>Includes: Base64-encoded detection image</li>
+                    </ul>
+                    <p><strong>Authentication:</strong></p>
+                    <ul>
+                        <li>Log in to ChatSurfer in your browser</li>
+                        <li>Open DevTools (F12) → Application → Cookies</li>
+                        <li>Copy the SESSION cookie value</li>
                     </ul>
                 </div>
             </div>
@@ -721,6 +759,11 @@
                 document.getElementById('latticeUrl').value = config.latticeUrl || '';
                 document.getElementById('latticeToken').value = config.latticeToken || '';
                 document.getElementById('latticeIntegration').value = config.latticeIntegration || 'taiwan-cctv';
+                // ChatSurfer fields
+                document.getElementById('chatsurferSession').value = config.chatsurferSession || '';
+                document.getElementById('chatsurferRoom').value = config.chatsurferRoom || '';
+                document.getElementById('chatsurferNickname').value = config.chatsurferNickname || 'CCTV_Bot';
+                document.getElementById('chatsurferDomain').value = config.chatsurferDomain || 'chatsurferxmppunclass';
 
                 updateStreamButtonState(config.enabled);
                 updateFormatFields();
@@ -734,19 +777,29 @@
             const format = document.getElementById('streamFormat').value;
             const cotFields = document.querySelectorAll('.cot-fields');
             const latticeFields = document.querySelectorAll('.lattice-fields');
+            const chatsurferFields = document.querySelectorAll('.chatsurfer-fields');
             const cotInfo = document.querySelector('.cot-info');
             const latticeInfo = document.querySelector('.lattice-info');
+            const chatsurferInfo = document.querySelector('.chatsurfer-info');
 
+            // Hide all fields first
+            cotFields.forEach(el => el.classList.add('hidden'));
+            latticeFields.forEach(el => el.classList.add('hidden'));
+            chatsurferFields.forEach(el => el.classList.add('hidden'));
+            cotInfo.classList.add('hidden');
+            latticeInfo.classList.add('hidden');
+            chatsurferInfo.classList.add('hidden');
+
+            // Show selected format fields
             if (format === 'cot') {
                 cotFields.forEach(el => el.classList.remove('hidden'));
-                latticeFields.forEach(el => el.classList.add('hidden'));
                 cotInfo.classList.remove('hidden');
-                latticeInfo.classList.add('hidden');
             } else if (format === 'lattice') {
-                cotFields.forEach(el => el.classList.add('hidden'));
                 latticeFields.forEach(el => el.classList.remove('hidden'));
-                cotInfo.classList.add('hidden');
                 latticeInfo.classList.remove('hidden');
+            } else if (format === 'chatsurfer') {
+                chatsurferFields.forEach(el => el.classList.remove('hidden'));
+                chatsurferInfo.classList.remove('hidden');
             }
         }
 
@@ -759,7 +812,12 @@
                 latticeUrl: document.getElementById('latticeUrl').value,
                 latticeToken: document.getElementById('latticeToken').value,
                 latticeSandboxToken: document.getElementById('latticeSandboxToken').value,
-                latticeIntegration: document.getElementById('latticeIntegration').value
+                latticeIntegration: document.getElementById('latticeIntegration').value,
+                // ChatSurfer fields
+                chatsurferSession: document.getElementById('chatsurferSession').value,
+                chatsurferRoom: document.getElementById('chatsurferRoom').value,
+                chatsurferNickname: document.getElementById('chatsurferNickname').value,
+                chatsurferDomain: document.getElementById('chatsurferDomain').value
             };
 
             try {

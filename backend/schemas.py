@@ -16,8 +16,8 @@ class StreamConfigRequest(BaseModel):
     model_config = ConfigDict(str_strip_whitespace=True)
 
     enabled: bool = Field(description="Enable or disable streaming")
-    format: Literal["cot", "lattice"] = Field(
-        description="Stream format: 'cot' for Cursor on Target or 'lattice' for Anduril Lattice"
+    format: Literal["cot", "lattice", "chatsurfer"] = Field(
+        description="Stream format: 'cot' for Cursor on Target, 'lattice' for Anduril Lattice, or 'chatsurfer' for ChatSurfer"
     )
     ip: str = Field(
         default="127.0.0.1",
@@ -44,6 +44,23 @@ class StreamConfigRequest(BaseModel):
     latticeUrl: Optional[str] = Field(
         default="",
         description="Lattice API URL"
+    )
+    # ChatSurfer fields
+    chatsurferSession: Optional[str] = Field(
+        default="",
+        description="ChatSurfer SESSION cookie value"
+    )
+    chatsurferRoom: Optional[str] = Field(
+        default="",
+        description="ChatSurfer room name"
+    )
+    chatsurferNickname: Optional[str] = Field(
+        default="CCTV_Bot",
+        description="ChatSurfer bot nickname"
+    )
+    chatsurferDomain: Optional[str] = Field(
+        default="chatsurferxmppunclass",
+        description="ChatSurfer domain ID"
     )
 
     @field_validator("ip")

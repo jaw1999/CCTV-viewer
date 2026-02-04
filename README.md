@@ -12,6 +12,7 @@ Real-time viewer for 2,500+ Taiwan Highway Bureau CCTV feeds with YOLOv8 vehicle
 - **Stream Out Integration**:
   - CoT (Cursor on Target) via UDP for TAK/ATAK
   - Lattice (Anduril) via REST API
+  - ChatSurfer (NRO) via REST API
 - **Performance Optimizations**:
   - Concurrent ingestion with connection pooling
   - Selective YOLO processing (skip unchanged frames)
@@ -88,6 +89,8 @@ Real-time viewer for 2,500+ Taiwan Highway Bureau CCTV feeds with YOLOv8 vehicle
                             │   (Optional)     │──UDP──▶ TAK/ATAK (CoT)
                             │                  │
                             │                  │──HTTPS─▶ Lattice (Anduril)
+                            │                  │
+                            │                  │──HTTPS─▶ ChatSurfer (NRO)
                             └──────────────────┘
 ```
 
@@ -374,17 +377,37 @@ Get all feeds as GeoJSON for map display
 #### POST /api/stream/config
 Configure Stream Out integration
 
-**Request:**
+**Request (CoT):**
 ```json
 {
   "enabled": true,
   "format": "cot",
   "ip": "127.0.0.1",
-  "port": 8087,
-  "latticeUrl": "",
-  "latticeToken": "",
-  "latticeSandboxToken": "",
+  "port": 8087
+}
+```
+
+**Request (Lattice):**
+```json
+{
+  "enabled": true,
+  "format": "lattice",
+  "latticeUrl": "https://your-env.lattice.anduril.com",
+  "latticeToken": "your-env-token",
+  "latticeSandboxToken": "your-sandbox-token",
   "latticeIntegration": "taiwan-cctv"
+}
+```
+
+**Request (ChatSurfer):**
+```json
+{
+  "enabled": true,
+  "format": "chatsurfer",
+  "chatsurferSession": "your-session-cookie",
+  "chatsurferRoom": "your-room-name",
+  "chatsurferNickname": "CCTV_Bot",
+  "chatsurferDomain": "chatsurferxmppunclass"
 }
 ```
 
@@ -492,6 +515,29 @@ Publish vehicle track entities to Lattice platform.
 **Entity:** Camera ID, location, VEHICLE platform type, 1-hour expiry
 
 **Note:** Sandboxes need two tokens (Authorization + anduril-sandbox-authorization headers)
+
+### ChatSurfer (NRO)
+Send vehicle detection alerts to ChatSurfer chat rooms.
+
+**Config:** Format, Session Cookie, Room Name, Nickname, Domain ID
+
+**Message format:**
+```
+[VEHICLE DETECTION]
+Road: 國道1號
+Location: 12K+500
+Camera: CCTV-42-0020-162-001
+Coords: 25.0478, 121.5319
+Time: 2026-02-04 15:30:22 UTC
+Snapshot: http://192.168.1.100:8001/api/feeds/CCTV-42-0020-162-001/snapshot
+```
+
+**Setup:**
+1. Get your ChatSurfer SESSION cookie from browser dev tools
+2. Identify the room name you want to post to
+3. Configure via the Stream Out panel in the UI or POST to `/api/stream/config`
+
+**Note:** The snapshot URL must be accessible from where ChatSurfer users are located
 
 ## YOLO Vehicle Detection
 

@@ -31,6 +31,12 @@ class StreamConfig:
     latticeSandboxToken: str = ""
     latticeIntegration: str = "taiwan-cctv"
     latticeUrl: str = ""
+    # ChatSurfer fields
+    chatsurferSession: str = ""
+    chatsurferRoom: str = ""
+    chatsurferNickname: str = "CCTV_Bot"
+    chatsurferDomain: str = "chatsurferxmppunclass"
+    chatsurferServerUrl: str = "http://localhost:8001"
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -42,6 +48,11 @@ class StreamConfig:
             "latticeSandboxToken": self.latticeSandboxToken,
             "latticeIntegration": self.latticeIntegration,
             "latticeUrl": self.latticeUrl,
+            "chatsurferSession": self.chatsurferSession,
+            "chatsurferRoom": self.chatsurferRoom,
+            "chatsurferNickname": self.chatsurferNickname,
+            "chatsurferDomain": self.chatsurferDomain,
+            "chatsurferServerUrl": self.chatsurferServerUrl,
         }
 
     @classmethod
@@ -55,6 +66,10 @@ class StreamConfig:
             latticeSandboxToken=data.get("latticeSandboxToken", ""),
             latticeIntegration=data.get("latticeIntegration", "taiwan-cctv"),
             latticeUrl=data.get("latticeUrl", ""),
+            chatsurferSession=data.get("chatsurferSession", ""),
+            chatsurferRoom=data.get("chatsurferRoom", ""),
+            chatsurferNickname=data.get("chatsurferNickname", "CCTV_Bot"),
+            chatsurferDomain=data.get("chatsurferDomain", "chatsurferxmppunclass"),
         )
 
 

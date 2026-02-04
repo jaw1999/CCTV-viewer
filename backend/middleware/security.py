@@ -84,10 +84,20 @@ class APIKeyMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
         # Skip if disabled or no keys configured
         if not self.enabled or not self.valid_keys:
-            return await call_next(request)
+            try:
+                return await call_next(request)
+            except RuntimeError as e:
+                if "No response returned" in str(e):
+                    return JSONResponse(status_code=500, content={"error": "internal_error"})
+                raise
 
         if self._is_excluded(request.url.path):
-            return await call_next(request)
+            try:
+                return await call_next(request)
+            except RuntimeError as e:
+                if "No response returned" in str(e):
+                    return JSONResponse(status_code=500, content={"error": "internal_error"})
+                raise
 
         api_key = request.headers.get("X-API-Key") or request.query_params.get("api_key")
 
@@ -97,7 +107,12 @@ class APIKeyMiddleware(BaseHTTPMiddleware):
                 content={"error": "unauthorized", "message": "Valid API key required"},
             )
 
-        return await call_next(request)
+        try:
+            return await call_next(request)
+        except RuntimeError as e:
+            if "No response returned" in str(e):
+                return JSONResponse(status_code=500, content={"error": "internal_error"})
+            raise
 
 
 class RateLimitMiddleware(BaseHTTPMiddleware):
@@ -130,7 +145,12 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
 
     async def dispatch(self, request: Request, call_next):
         if not self.enabled or self._is_excluded(request.url.path):
-            return await call_next(request)
+            try:
+                return await call_next(request)
+            except RuntimeError as e:
+                if "No response returned" in str(e):
+                    return JSONResponse(status_code=500, content={"error": "internal_error"})
+                raise
 
         client_id = self._get_client_id(request)
         bucket = self.buckets[client_id]
@@ -150,4 +170,9 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
             )
 
         bucket["tokens"] -= 1
-        return await call_next(request)
+        try:
+            return await call_next(request)
+        except RuntimeError as e:
+            if "No response returned" in str(e):
+                return JSONResponse(status_code=500, content={"error": "internal_error"})
+            raise
