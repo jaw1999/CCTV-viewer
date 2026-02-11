@@ -13,9 +13,10 @@ RUN pip install --no-cache-dir \
     torch==2.1.2+cpu torchvision==0.16.2+cpu \
     --index-url https://download.pytorch.org/whl/cpu
 
-# Install remaining dependencies (torch already satisfied)
+# Install remaining dependencies, skipping torch/torchvision (already installed as CPU-only)
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+RUN grep -iv '^torch' requirements.txt > requirements-notorch.txt && \
+    pip install --no-cache-dir -r requirements-notorch.txt
 
 # Copy application code and model files
 COPY . .
