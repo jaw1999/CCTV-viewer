@@ -1,16 +1,16 @@
 FROM python:3.10-slim
 
-# System deps for OpenCV
+# System deps for OpenCV and building native extensions (psutil)
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
-        libgl1 libglib2.0-0 && \
+        libgl1 libglib2.0-0 gcc python3-dev && \
     rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
 # Install CPU-only PyTorch first to avoid pulling CUDA packages
 RUN pip install --no-cache-dir \
-    torch==2.1.2+cpu torchvision==0.16.2+cpu \
+    torch torchvision \
     --index-url https://download.pytorch.org/whl/cpu
 
 # Install remaining dependencies, skipping torch/torchvision (already installed as CPU-only)

@@ -1,0 +1,15 @@
+services:
+  cctv-viewer:
+    build: .
+    ports:
+      - "8000:8000"
+      - "8001:8001"
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+      - ./config.yaml:/app/config.yaml:ro
+    environment:
+      - CCTV_AUTH_ENABLED=false
+      - CCTV_SSL_VERIFY=true
+      - CCTV_ENV=development
+    restart: unless-stopped
